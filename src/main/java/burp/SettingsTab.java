@@ -37,6 +37,11 @@ public class SettingsTab {
 
     private static final int FEEDBACK_TIMEOUT_MS = 6000;
 
+    /**
+     * Stands in for the empty option in the rule table's fingerprint drop-down.
+     */
+    private static final String INHERIT_LABEL = "(inherit from Defaults)";
+
     private final Settings settings;
 
     private final JPanel panelMain = new JPanel(new BorderLayout());
@@ -287,6 +292,18 @@ public class SettingsTab {
         choices.addAll(fingerprints);
         var editor = new JComboBox<>(choices.toArray(new String[0]));
         editor.setMaximumRowCount(15);
+
+        // Spell out the empty entry. Otherwise it is a blank line sitting right above "default",
+        // and the two are easy to confuse even though they mean different things: blank inherits
+        // the Defaults tab, while "default" pins this host to the library's built-in profile.
+        editor.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean selected, boolean focused) {
+                var label = value == null || value.toString().isEmpty() ? INHERIT_LABEL : value.toString();
+                return super.getListCellRendererComponent(list, label, index, selected, focused);
+            }
+        });
         table.getColumnModel().getColumn(RuleTableModel.COL_FINGERPRINT).setCellEditor(new DefaultCellEditor(editor));
 
         // A checkbox and a number never benefit from extra width, so pin them and let the columns
@@ -653,7 +670,8 @@ public class SettingsTab {
                 "Uncheck to switch a rule off without deleting it.",
                 "Required. \"example.com\" matches that host only; \"*.example.com\" matches its subdomains but not "
                         + "example.com itself. No scheme, port or path.",
-                "Browser TLS profile to spoof for this host. Empty inherits the Defaults tab.",
+                "Browser TLS profile to spoof for this host. Empty inherits the Defaults tab; note that "
+                        + "\"default\" is a profile in its own right, not the same as leaving this empty.",
                 "Raw ClientHello hex stream from Wireshark. Overrides the Fingerprint column when set. "
                         + "Empty inherits the Defaults tab.",
                 "Upstream proxy for this host, e.g. socks5://127.0.0.1:1080. Empty inherits the Defaults tab.",
