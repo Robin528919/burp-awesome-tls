@@ -6,7 +6,9 @@ import burp.api.montoya.persistence.Preferences;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Configuration store for the extension.
@@ -30,7 +32,12 @@ public class Settings {
     private final String useInterceptedFingerprint = "UseInterceptedFingerprint";
     private final String httpTimeout = "HttpTimeout";
     private final String externalProxyUrl = "ExternalProxyUrl";
-    private final String domainRules = "DomainRules";
+
+    /**
+     * Where rules used to live. Still read once so existing setups migrate, and deliberately not
+     * deleted afterwards so downgrading keeps working.
+     */
+    private final String legacyDomainRules = "DomainRules";
 
     public static final String DEFAULT_SPOOF_PROXY_ADDRESS = "127.0.0.1:8887";
     public static final String DEFAULT_INTERCEPT_PROXY_ADDRESS = "127.0.0.1:8886";
@@ -55,9 +62,12 @@ public class Settings {
     private volatile List<FingerprintRule> cachedRules;
     private volatile RuleMatcher matcher;
 
+    private final RuleStore ruleStore;
+
     public Settings(MontoyaApi api) {
         this.storage = api.persistence().preferences();
         this.logging = api.logging();
+        this.ruleStore = RuleStore.inConfigDir(api.logging()::logToError);
 
         this.cachedSpoofProxyAddress = read(spoofProxyAddress, DEFAULT_SPOOF_PROXY_ADDRESS);
         this.cachedInterceptProxyAddress = read(interceptProxyAddress, DEFAULT_INTERCEPT_PROXY_ADDRESS);
@@ -68,7 +78,51 @@ public class Settings {
         this.cachedHttpTimeout = read(httpTimeout, DEFAULT_HTTP_TIMEOUT);
         this.cachedUseInterceptedFingerprint = read(useInterceptedFingerprint, USE_INTERCEPTED_FINGERPRINT);
 
-        setRules(loadRules());
+        applyRules(loadRulesAtStartup());
+    }
+
+    /**
+     * Rules come from the JSON file. A setup created before the file existed still has them in
+     * Burp's preference store, so migrate those once.
+     */
+    private List<FingerprintRule> loadRulesAtStartup() {
+        if (ruleStore.exists()) {
+            return ruleStore.load();
+        }
+
+        var legacy = loadLegacyRules();
+        if (legacy.isEmpty()) {
+            return List.of();
+        }
+
+        try {
+            ruleStore.save(legacy);
+            logging.logToOutput("Awesome TLS: migrated " + legacy.size() + " domain rule(s) to " + ruleStore.path());
+        } catch (IOException e) {
+            // Keep going with the rules in memory; they are still in the preference store.
+            logging.logToError("Awesome TLS: could not migrate domain rules to " + ruleStore.path() + ": " + e);
+        }
+
+        return legacy;
+    }
+
+    private List<FingerprintRule> loadLegacyRules() {
+        var json = this.storage.getString(this.legacyDomainRules);
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            List<FingerprintRule> parsed = gson.fromJson(json, new TypeToken<List<FingerprintRule>>() {
+            }.getType());
+            if (parsed == null) {
+                return List.of();
+            }
+            return parsed.stream().filter(Objects::nonNull).map(FingerprintRule::normalized).toList();
+        } catch (Exception e) {
+            logging.logToError("Failed to parse the stored domain rules, ignoring them: " + e);
+            return List.of();
+        }
     }
 
     private String read(String key, String defaultValue) {
@@ -189,30 +243,36 @@ public class Settings {
         return this.cachedRules;
     }
 
-    public void setRules(List<FingerprintRule> rules) {
-        // Filter nulls rather than using List.copyOf directly: hand-edited JSON such as
-        // "[null, {...}]" deserializes to a list with null entries, which copyOf rejects.
-        var snapshot = rules.stream().filter(java.util.Objects::nonNull).toList();
-        this.cachedRules = snapshot;
-        this.matcher = new RuleMatcher(snapshot);
-        this.write(this.domainRules, gson.toJson(snapshot));
+    /**
+     * Applies rules and writes them to disk.
+     * <p>
+     * The in-memory state is updated first so an edit takes effect on the next request even if
+     * the write fails; the caller is expected to surface the failure so the user knows the change
+     * will not survive a restart.
+     *
+     * @throws IOException if the rules could not be written to disk.
+     */
+    public void setRules(List<FingerprintRule> rules) throws IOException {
+        applyRules(rules);
+        ruleStore.save(this.cachedRules);
     }
 
-    private List<FingerprintRule> loadRules() {
-        var json = this.storage.getString(this.domainRules);
-        if (json == null || json.isBlank()) {
-            return List.of();
-        }
+    /**
+     * Updates the live configuration without touching disk.
+     */
+    private void applyRules(List<FingerprintRule> rules) {
+        // Filter nulls rather than using List.copyOf directly: hand-edited JSON such as
+        // "[null, {...}]" deserializes to a list with null entries, which copyOf rejects.
+        var snapshot = rules.stream().filter(Objects::nonNull).toList();
+        this.cachedRules = snapshot;
+        this.matcher = new RuleMatcher(snapshot);
+    }
 
-        try {
-            List<FingerprintRule> parsed = gson.fromJson(json, new TypeToken<List<FingerprintRule>>() {
-            }.getType());
-            return parsed == null ? List.of() : parsed;
-        } catch (Exception e) {
-            // Corrupt or hand-edited JSON must not take the extension down; fall back to no rules.
-            logging.logToError("Failed to parse domain rules, ignoring them: " + e);
-            return List.of();
-        }
+    /**
+     * @return where the rules are stored, for display and for import/export.
+     */
+    public RuleStore getRuleStore() {
+        return this.ruleStore;
     }
 
     public String[] getFingerprints() {

@@ -2,12 +2,19 @@ package burp;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.AbstractTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import java.awt.*;
 import java.awt.event.MouseEvent;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -38,6 +45,12 @@ public class SettingsTab {
     private static final int FEEDBACK_TIMEOUT_MS = 6000;
 
     /**
+     * Editing a cell fires a change per keystroke; coalesce them so a burst of typing results in
+     * one write and one matcher rebuild.
+     */
+    private static final int AUTO_SAVE_DELAY_MS = 500;
+
+    /**
      * Stands in for the empty option in the rule table's fingerprint drop-down.
      */
     private static final String INHERIT_LABEL = "(inherit from Defaults)";
@@ -63,6 +76,14 @@ public class SettingsTab {
     private final JTable ruleTable;
 
     private final List<String> fingerprints;
+
+    private final Timer autoSaveTimer;
+
+    /**
+     * Suppresses auto-save while the table is being populated programmatically, so loading or
+     * importing does not immediately write back what was just read.
+     */
+    private boolean populating;
 
     /**
      * A validation failure, together with where the user has to go to fix it.
@@ -91,6 +112,14 @@ public class SettingsTab {
         panelMain.add(buildStatusBar(), BorderLayout.NORTH);
         panelMain.add(tabs, BorderLayout.CENTER);
         panelMain.add(buildActionBar(), BorderLayout.SOUTH);
+
+        autoSaveTimer = new Timer(AUTO_SAVE_DELAY_MS, e -> persistRules());
+        autoSaveTimer.setRepeats(false);
+        ruleTableModel.addTableModelListener(e -> {
+            if (!populating) {
+                autoSaveTimer.restart();
+            }
+        });
 
         load();
     }
@@ -201,17 +230,52 @@ public class SettingsTab {
         });
 
         var buttonRemove = new JButton("Remove selected");
-        buttonRemove.addActionListener(e -> {
-            stopEditing();
-            ruleTableModel.removeRules(ruleTable.getSelectedRows());
-        });
+        buttonRemove.addActionListener(e -> removeSelectedRules());
+
+        var buttonImport = new JButton("Import…");
+        buttonImport.setToolTipText("Load rules from a JSON file exported earlier.");
+        buttonImport.addActionListener(e -> importRules());
+
+        var buttonExport = new JButton("Export…");
+        buttonExport.setToolTipText("Save the current rules to a JSON file.");
+        buttonExport.addActionListener(e -> exportRules());
 
         var buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         buttons.add(buttonAdd);
         buttons.add(buttonRemove);
-        panel.add(buttons, BorderLayout.SOUTH);
+        buttons.add(Box.createHorizontalStrut(16));
+        buttons.add(buttonImport);
+        buttons.add(buttonExport);
+
+        var footer = new JPanel(new BorderLayout(0, 4));
+        footer.add(buttons, BorderLayout.NORTH);
+        footer.add(descriptionText("Saved automatically to " + settings.getRuleStore().path()
+                + " — edit that file directly if you prefer, then reload the extension."), BorderLayout.CENTER);
+        panel.add(footer, BorderLayout.SOUTH);
 
         return panel;
+    }
+
+    private void removeSelectedRules() {
+        stopEditing();
+
+        var selected = ruleTable.getSelectedRows();
+        if (selected.length == 0) {
+            showFeedback("Select the rules to remove first.", true);
+            return;
+        }
+
+        // Saving is automatic, so a deletion hits disk straight away and there is no undo.
+        var confirmed = JOptionPane.showConfirmDialog(panelMain,
+                "Remove " + selected.length + " rule" + (selected.length == 1 ? "" : "s") + "?\n\n"
+                        + "Rules are saved automatically, so this takes effect immediately.\n"
+                        + "The previous version is kept as " + settings.getRuleStore().backupPath().getFileName() + ".",
+                "Remove rules", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirmed != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        ruleTableModel.removeRules(selected);
     }
 
     /**
@@ -306,6 +370,25 @@ public class SettingsTab {
         });
         table.getColumnModel().getColumn(RuleTableModel.COL_FINGERPRINT).setCellEditor(new DefaultCellEditor(editor));
 
+        // Auto-save accepts half-finished rows, so flag the ones that will not match anything
+        // rather than blocking the save.
+        table.getColumnModel().getColumn(RuleTableModel.COL_HOST).setCellRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable owner, Object value, boolean selected,
+                                                           boolean focused, int row, int column) {
+                var component = super.getTableCellRendererComponent(owner, value, selected, focused, row, column);
+
+                var problem = hostPatternProblem(value == null ? "" : value.toString());
+                if (problem != null) {
+                    component.setForeground(errorColor());
+                    setToolTipText(problem);
+                } else {
+                    setToolTipText(RuleTableModel.COLUMN_HELP[RuleTableModel.COL_HOST]);
+                }
+                return component;
+            }
+        });
+
         // A checkbox and a number never benefit from extra width, so pin them and let the columns
         // holding hostnames, hex streams and proxy URLs split what is left.
         fixColumnWidth(table, RuleTableModel.COL_ENABLED, 44);
@@ -371,6 +454,147 @@ public class SettingsTab {
 
     // ---------------------------------------------------------------- load & save
 
+    /**
+     * Writes the rule table to disk. Invalid rows are stored as-is rather than blocking the save:
+     * a half-typed rule is a normal intermediate state when saving is automatic, and
+     * {@link RuleMatcher} already ignores rows with no host pattern.
+     */
+    private void persistRules() {
+        var error = writeRules();
+        if (error != null) {
+            showFeedback(error, true);
+            return;
+        }
+
+        var invalid = ruleTableModel.invalidRowCount();
+        if (invalid > 0) {
+            showFeedback("Domain rules saved. " + invalid + " incomplete row"
+                    + (invalid == 1 ? " is" : "s are") + " highlighted and will be ignored.", false);
+        } else {
+            showFeedback("Domain rules saved.", false);
+        }
+    }
+
+    /**
+     * @return an error message if the rules could not be written to disk, else null.
+     */
+    private String writeRules() {
+        try {
+            settings.setRules(ruleTableModel.snapshot());
+            return null;
+        } catch (IOException e) {
+            return "Rules are active but could NOT be written to "
+                    + settings.getRuleStore().path() + ": " + e.getMessage();
+        }
+    }
+
+    private void exportRules() {
+        stopEditing();
+
+        var chooser = new JFileChooser();
+        chooser.setDialogTitle("Export domain rules");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files", "json"));
+        chooser.setSelectedFile(new File("awesome-tls-rules.json"));
+
+        if (chooser.showSaveDialog(panelMain) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        var target = chooser.getSelectedFile().toPath();
+        var rules = ruleTableModel.snapshot();
+
+        try {
+            Files.writeString(target, RuleStore.serialize(rules), StandardCharsets.UTF_8);
+            showFeedback("Exported " + rules.size() + " rule" + (rules.size() == 1 ? "" : "s") + " to " + target, false);
+        } catch (IOException e) {
+            showFeedback("Could not write " + target + ": " + e.getMessage(), true);
+        }
+    }
+
+    private void importRules() {
+        stopEditing();
+
+        var chooser = new JFileChooser();
+        chooser.setDialogTitle("Import domain rules");
+        chooser.setFileFilter(new FileNameExtensionFilter("JSON files", "json"));
+
+        if (chooser.showOpenDialog(panelMain) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        var source = chooser.getSelectedFile().toPath();
+
+        List<FingerprintRule> imported;
+        try {
+            imported = RuleStore.parse(Files.readString(source, StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            showFeedback("Could not read " + source + ": " + e.getMessage(), true);
+            return;
+        }
+
+        if (imported.isEmpty()) {
+            showFeedback("No rules found in " + source, true);
+            return;
+        }
+
+        // An imported file is untrusted input, so it goes through the same checks as manual edits.
+        var error = validateRules(imported);
+        if (error != null) {
+            showFeedback("Import rejected — " + error.message(), true);
+            return;
+        }
+
+        var current = ruleTableModel.snapshot();
+        var choice = JOptionPane.showOptionDialog(panelMain,
+                "The file contains " + imported.size() + " rule" + (imported.size() == 1 ? "" : "s") + ".\n"
+                        + "You currently have " + current.size() + ".\n\n"
+                        + "Replace discards your current rules.\n"
+                        + "Merge keeps them, with imported rules winning where the host pattern matches.",
+                "Import domain rules", JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE, null,
+                new String[]{"Merge", "Replace all", "Cancel"}, "Merge");
+
+        List<FingerprintRule> result;
+        if (choice == 0) {
+            result = merge(current, imported);
+        } else if (choice == 1) {
+            result = imported;
+        } else {
+            return;
+        }
+
+        setTableRules(result);
+        persistRules();
+        showFeedback("Imported " + imported.size() + " rule" + (imported.size() == 1 ? "" : "s")
+                + "; " + result.size() + " active.", false);
+    }
+
+    /**
+     * Later rules win, so imported entries replace existing ones with the same host pattern while
+     * everything else is kept. Insertion order is preserved for a stable table.
+     */
+    private static List<FingerprintRule> merge(List<FingerprintRule> current, List<FingerprintRule> imported) {
+        var byPattern = new LinkedHashMap<String, FingerprintRule>();
+        for (var rule : current) {
+            byPattern.put(rule.hostPattern.toLowerCase(Locale.ROOT), rule);
+        }
+        for (var rule : imported) {
+            byPattern.put(rule.hostPattern.toLowerCase(Locale.ROOT), rule);
+        }
+        return List.copyOf(byPattern.values());
+    }
+
+    /**
+     * Fills the table without tripping auto-save.
+     */
+    private void setTableRules(List<FingerprintRule> rules) {
+        populating = true;
+        try {
+            ruleTableModel.setRules(rules);
+        } finally {
+            populating = false;
+        }
+    }
+
     private void load() {
         textFieldSpoofProxyAddress.setText(settings.getSpoofProxyAddress());
         comboBoxFingerprint.setValue(settings.getFingerprint());
@@ -382,20 +606,22 @@ public class SettingsTab {
         textFieldInterceptProxyAddress.setText(settings.getInterceptProxyAddress());
         textFieldBurpProxyAddress.setText(settings.getBurpProxyAddress());
 
-        ruleTableModel.setRules(settings.getRules());
+        setTableRules(settings.getRules());
     }
 
     /**
-     * Saves every tab at once. The previous version had one button per tab, each writing only
-     * its own fields, so editing two tabs and saving from one silently discarded the other.
+     * Saves the Defaults and Advanced tabs. Domain rules are not handled here: they save
+     * themselves as they are edited.
+     * <p>
+     * Both tabs are always written together. An earlier version had one button per tab, each
+     * persisting only its own fields, so editing two tabs and saving from one silently discarded
+     * the other.
      */
     private void save() {
         // A cell still being edited has not written back to the model yet.
         stopEditing();
 
-        var rules = ruleTableModel.snapshot();
-
-        var error = validate(rules);
+        var error = validateGlobals();
         if (error != null) {
             reportError(error);
             return;
@@ -414,9 +640,17 @@ public class SettingsTab {
         settings.setInterceptProxyAddress(textFieldInterceptProxyAddress.getText().trim());
         settings.setBurpProxyAddress(textFieldBurpProxyAddress.getText().trim());
 
-        settings.setRules(rules);
+        // Flush any rule edit still inside the debounce window, so one Save leaves nothing pending.
+        if (autoSaveTimer.isRunning()) {
+            autoSaveTimer.stop();
+            var ruleError = writeRules();
+            if (ruleError != null) {
+                showFeedback(ruleError, true);
+                return;
+            }
+        }
 
-        var message = "Saved. " + rules.size() + " domain rule" + (rules.size() == 1 ? "" : "s") + " active.";
+        var message = "Saved.";
         if (addressChanged) {
             message += " Reload the extension for the new listen address to take effect.";
         }
@@ -438,7 +672,11 @@ public class SettingsTab {
         showFeedback(error.message(), true);
     }
 
-    private ValidationError validate(List<FingerprintRule> rules) {
+    /**
+     * Checks the Defaults and Advanced tabs, which are saved explicitly and can therefore refuse
+     * to save.
+     */
+    private ValidationError validateGlobals() {
         var addressError = validateAddress(textFieldSpoofProxyAddress.getText(), "Listen address");
         if (addressError != null) return ValidationError.on(TAB_DEFAULTS, addressError);
 
@@ -452,23 +690,21 @@ public class SettingsTab {
         addressError = validateAddress(textFieldBurpProxyAddress.getText(), "Burp proxy address");
         if (addressError != null) return ValidationError.on(TAB_ADVANCED, addressError);
 
-        var invalidTimeout = ruleTableModel.firstInvalidTimeoutRow();
-        if (invalidTimeout >= 0) {
-            return ValidationError.onRule(invalidTimeout, "timeout must be a whole number of seconds, or empty to inherit.");
-        }
+        return null;
+    }
 
+    /**
+     * Checks a whole rule set. Used to vet imported files; the table itself tolerates incomplete
+     * rows and flags them instead, because auto-save cannot reject what the user is still typing.
+     */
+    private ValidationError validateRules(List<FingerprintRule> rules) {
         var seen = new HashSet<String>();
         for (var i = 0; i < rules.size(); i++) {
             var rule = rules.get(i);
 
-            if (rule.hostPattern.isEmpty()) {
-                return ValidationError.onRule(i, "host pattern is required, e.g. example.com or *.example.com");
-            }
-            if (rule.hostPattern.contains("/") || rule.hostPattern.contains(":") || rule.hostPattern.contains(" ")) {
-                return ValidationError.onRule(i, "host pattern must be a bare hostname, without scheme, port or spaces.");
-            }
-            if (rule.hostPattern.contains("*") && !rule.hostPattern.startsWith("*.")) {
-                return ValidationError.onRule(i, "the only supported wildcard form is *.example.com");
+            var problem = hostPatternProblem(rule.hostPattern);
+            if (problem != null) {
+                return ValidationError.onRule(i, problem);
             }
             if (!seen.add(rule.hostPattern.toLowerCase(Locale.ROOT))) {
                 return ValidationError.onRule(i, "duplicate host pattern '" + rule.hostPattern + "'.");
@@ -484,6 +720,26 @@ public class SettingsTab {
             }
         }
 
+        return null;
+    }
+
+    /**
+     * Shared by import validation and the table's highlighting of incomplete rows.
+     *
+     * @return what is wrong with the host pattern, or null if it is usable.
+     */
+    static String hostPatternProblem(String hostPattern) {
+        var pattern = hostPattern == null ? "" : hostPattern.trim();
+
+        if (pattern.isEmpty()) {
+            return "host pattern is required, e.g. example.com or *.example.com";
+        }
+        if (pattern.contains("/") || pattern.contains(":") || pattern.contains(" ")) {
+            return "host pattern must be a bare hostname, without scheme, port or spaces.";
+        }
+        if (pattern.contains("*") && !pattern.startsWith("*.")) {
+            return "the only supported wildcard form is *.example.com";
+        }
         return null;
     }
 
@@ -726,6 +982,20 @@ public class SettingsTab {
                 out.add(rule);
             }
             return out;
+        }
+
+        /**
+         * @return how many rows will be ignored at request time because their host pattern is
+         * missing or malformed.
+         */
+        int invalidRowCount() {
+            var count = 0;
+            for (var rule : rules) {
+                if (hostPatternProblem(rule.hostPattern) != null) {
+                    count++;
+                }
+            }
+            return count;
         }
 
         /**

@@ -45,12 +45,14 @@ The Go library also runs standalone for debugging: `go run ./cmd/main.go -spoof 
 There is no test framework — no `_test.go` files, no `src/test`, and CI only verifies that
 both halves compile.
 
-The one automated check is a self-test on the domain-rule matching logic, which is easy to
-break silently:
+Two runnable self-checks cover the logic that breaks silently. Both are plain `main` methods
+with no Burp dependency:
 
 ```sh
 ./gradlew compileJava
-java -ea -cp build/classes/java/main burp.RuleMatcher
+GSON=$(find ~/.gradle/caches -name 'gson-*.jar' | head -1)
+java -ea -cp build/classes/java/main:$GSON burp.RuleMatcher   # matching + rule override semantics
+java -ea -cp build/classes/java/main:$GSON burp.RuleStore     # on-disk format, atomic write, corruption handling
 ```
 
 Everything else is verified manually: load the jar into Burp and check the resulting
@@ -97,6 +99,28 @@ Two things to preserve when touching this path:
   under Intruder/Scanner load. Writes update the cache and the store together, and the cached
   rule list is replaced wholesale (volatile) because the EDT writes it while proxy threads read it.
 
+### Where configuration lives
+
+Two different stores, on purpose:
+
+| What | Where | Why |
+|---|---|---|
+| Listen address, default fingerprint, timeouts, intercept settings | Burp `Preferences` | A handful of short scalars |
+| Domain rules | `rules.json` in the OS config dir, beside the Go side's `ca.der` | Unbounded size, hand-editable, diffable, shareable |
+
+Rules are **not** in `Preferences` because it is backed by the Java preference store, which
+rejects any single value over 8192 characters (`java.util.prefs.Preferences.MAX_VALUE_LENGTH`).
+Two rules carrying a full ClientHello hex stream already exceed that, and the failure mode is
+an exception thrown mid-save — silent data loss. `RuleStore` owns the file: atomic write via
+temp-file + rename, previous version kept as `.bak` (saving is automatic, so there is no undo),
+and unparseable content preserved as `.corrupt` rather than overwritten.
+
+`RuleStore.configDir()` reimplements Go's `os.UserConfigDir()` — Java has no equivalent — so
+both languages resolve to the same directory. Keep them in sync if either side changes.
+
+Setups predating the file still have rules in `Preferences`; `Settings.loadRulesAtStartup()`
+migrates them once and deliberately leaves the old key in place so a downgrade still works.
+
 ### The two halves
 
 - `src/main/java/burp/` — Burp extension. `Extension` registers the proxy handler, the
@@ -134,8 +158,19 @@ literal text, so the usual trick for wrapping or emphasising label copy does not
 `SettingsTab.descriptionText()` (a borderless, non-editable wrapping `JTextArea`) for anything
 longer than one line.
 
-**UI colors must come from `UIManager`.** Burp ships light and dark themes; hardcoded colors
-render black-on-black under the dark one. See the theming helpers at the bottom of `SettingsTab`.
+**Let Burp style the UI: `api.userInterface().applyThemeToComponent(component)`.** It applies
+Burp's font size, colors and table line spacing for the active theme, and is called once on the
+root panel in `Extension`. Never hardcode colors — Burp ships light and dark themes, and a fixed
+color renders black-on-black under the dark one. `SettingsTab`'s `UIManager` helpers exist only
+as a fallback for components Burp's pass does not reach. Related: `currentTheme()` returns
+`LIGHT`/`DARK` if you ever need to branch.
+
+**Burp's official settings-panel API does not fit this extension.** `SettingsPanelBuilder`
+(registered via `registerSettingsPanel`) gives you Burp-native styling and persistence for free,
+but only supports scalars — `stringSetting` / `integerSetting` / `booleanSetting` /
+`listSetting`. There is no table type, so the domain rules cannot use it, and splitting the
+config across `Settings > Extensions` and a suite tab would be worse than one coherent tab.
+Do not migrate without re-checking whether a table setting has been added.
 
 **Fields need a trailing filler column.** Burp's window is very wide; a `weightx=1` text field
 stretches across all of it. `FormPanel` gives fields their natural width and lets a filler

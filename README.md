@@ -78,6 +78,22 @@ the 'Defaults' tab.
 When several rules could match, the most specific one wins: an exact host beats a wildcard, and a longer wildcard
 suffix beats a shorter one. Row order does not matter.
 
+Rules save themselves as you edit — there's no need to press 'Save settings' for them. They are stored as plain JSON
+outside the Burp project, so they survive project switches and can be edited by hand, kept in version control, or
+shared with a team:
+
+| OS | Location |
+| --- | --- |
+| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json` (or `~/.config/...`) |
+| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+
+The previous version is always kept alongside it as `rules.json.bak`. Use 'Export…' and 'Import…' to move rules
+between machines; importing asks whether to merge with or replace your current rules.
+
+> :information_source: A rule with an incomplete host pattern is highlighted and simply ignored at request time,
+> so you can leave one half-finished without breaking anything.
+
 > :information_source: The settings on the 'Advanced' tab stay global. The local server runs a single shared intercept
 > proxy, so those values cannot vary per domain.
 
