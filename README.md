@@ -34,7 +34,8 @@ Unfortunately Burp's API is very limited for more advanced use cases like this, 
 to make this work.
 
 Once a request comes in, the extension intercepts it and forwards it to a local HTTPS server that started in the
-background (once the extension loaded).
+background (once the extension loaded). This applies to traffic from every Burp tool — Proxy, Repeater, Intruder and
+Scanner all get the spoofed fingerprint. Burp's own internal traffic is left alone.
 This server works like a proxy; it forwards the request to the destination, while persisting the original header order
 and applying a customizable TLS configuration.
 Then, the local server forwards the response back to Burp.

@@ -2,11 +2,14 @@ package burp;
 
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
-import burp.api.montoya.proxy.http.InterceptedRequest;
-import burp.api.montoya.proxy.http.ProxyRequestHandler;
-import burp.api.montoya.proxy.http.ProxyRequestReceivedAction;
-import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction;
+import burp.api.montoya.http.handler.HttpHandler;
+import burp.api.montoya.http.handler.HttpRequestToBeSent;
+import burp.api.montoya.http.handler.HttpResponseReceived;
+import burp.api.montoya.http.handler.RequestToBeSentAction;
+import burp.api.montoya.http.handler.ResponseReceivedAction;
+import burp.api.montoya.http.message.requests.HttpRequest;
 import com.google.gson.Gson;
 
 import java.net.URI;
@@ -41,15 +44,17 @@ public class Extension implements BurpExtension {
         // active theme. Cheaper and more correct than deriving all of that from UIManager.
         api.userInterface().applyThemeToComponent(ui);
         api.userInterface().registerSuiteTab("Awesome TLS", ui);
-        api.proxy().registerRequestHandler(new ProxyRequestHandler() {
+        // An HTTP handler sees traffic from every tool, so Repeater, Intruder and Scanner get the
+        // spoofed fingerprint too. A Proxy handler would only cover browser traffic.
+        api.http().registerHttpHandler(new HttpHandler() {
             @Override
-            public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest interceptedRequest) {
-                return processHttpRequest(interceptedRequest);
+            public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent requestToBeSent) {
+                return RequestToBeSentAction.continueWith(processHttpRequest(requestToBeSent));
             }
 
             @Override
-            public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest interceptedRequest) {
-                return ProxyRequestReceivedAction.continueWith(interceptedRequest);
+            public ResponseReceivedAction handleHttpResponseReceived(HttpResponseReceived responseReceived) {
+                return ResponseReceivedAction.continueWith(responseReceived);
             }
         });
 
@@ -76,8 +81,20 @@ public class Extension implements BurpExtension {
         }).start();
     }
 
-    private ProxyRequestToBeSentAction processHttpRequest(InterceptedRequest request) {
+    private HttpRequest processHttpRequest(HttpRequestToBeSent request) {
         try {
+            // The rewritten request below is itself sent by Burp, so it comes back through this
+            // handler. Without this guard it would be rewritten again, endlessly.
+            if (request.hasHeader(HEADER_KEY)) {
+                return request;
+            }
+
+            // Burp's own traffic (update checks, Collaborator polling, the BApp store) must reach
+            // its real destination; redirecting it through the spoof server would break it.
+            if (request.toolSource().isFromTool(ToolType.SUITE)) {
+                return request;
+            }
+
             var requestURL = new URI(request.url()).toURL();
 
             if (requestURL.getHost().equals("awesome-tls-error")) {
@@ -97,12 +114,13 @@ public class Extension implements BurpExtension {
             var goConfigJSON = gson.toJson(transportConfig);
             var url = new URI("https://" + settings.getSpoofProxyAddress()).toURL();
             var httpService = HttpService.httpService(url.getHost(), url.getPort(), Objects.equals(url.getProtocol(), "https"));
-            var nextRequest = request.withService(httpService).withAddedHeader(HEADER_KEY, goConfigJSON);
 
-            return ProxyRequestToBeSentAction.continueWith(nextRequest);
+            return request.withService(httpService).withAddedHeader(HEADER_KEY, goConfigJSON);
         } catch (Exception e) {
+            // Send the request unmodified rather than dropping it: losing traffic outright is a
+            // worse failure than losing the spoofed fingerprint for one request.
             api.logging().logToError("Http request error: " + e);
-            return null;
+            return request;
         }
     }
 }

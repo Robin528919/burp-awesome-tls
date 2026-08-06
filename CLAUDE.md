@@ -63,8 +63,9 @@ fingerprint against `tls.peet.ws` or `scrapfly.io/web-scraping-tools/http2-finge
 ### Request flow
 
 ```
-Burp Proxy
-  └─> Extension.processHttpRequest (Extension.java)
+Any Burp tool — Proxy, Repeater, Intruder, Scanner, other extensions
+  └─> Extension.processHttpRequest (registered via api.http().registerHttpHandler)
+        ├─ pass through if already rewritten, or if it is Burp's own traffic
         ├─ settings.toTransportConfig(host)      # defaults + most specific domain rule
         ├─ set Host / Scheme / HeaderOrder       # from the original request
         ├─ gson.toJson -> "Awesometlsconfig" header
@@ -145,6 +146,13 @@ a *silent* fallback to the zero value, not an error.
 
 **The magic header name has a hard format restriction.** `Awesometlsconfig` — one leading
 capital, rest lowercase. Burp's Extender API mangles anything else (see `server.go:14-16`).
+
+**The handler re-enters itself.** The rewritten request is sent *by Burp*, so it arrives back at
+`handleHttpRequestToBeSent` — an `HttpHandler` sees every outgoing request, unlike the
+`ProxyRequestHandler` this used to be. The presence of the `Awesometlsconfig` header is what
+marks a request as already handled; drop that guard and every request rewrites itself forever.
+Burp's own traffic (`ToolType.SUITE` — update checks, Collaborator polling) is passed through
+too, since redirecting it through the spoof server would break it.
 
 **The UI is hand-written Swing — do not reintroduce a `.form` file.** The IntelliJ GUI
 designer form was removed (along with the `com.intellij:forms_rt` dependency) because it was
