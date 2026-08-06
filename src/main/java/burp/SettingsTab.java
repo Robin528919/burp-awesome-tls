@@ -370,6 +370,14 @@ public class SettingsTab {
         });
         table.getColumnModel().getColumn(RuleTableModel.COL_FINGERPRINT).setCellEditor(new DefaultCellEditor(editor));
 
+        // Blank cells are the common case and say nothing about what will actually be used, so
+        // each one spells out what it resolves to.
+        var inheritance = new InheritanceRenderer();
+        table.getColumnModel().getColumn(RuleTableModel.COL_FINGERPRINT).setCellRenderer(inheritance);
+        table.getColumnModel().getColumn(RuleTableModel.COL_HEX).setCellRenderer(inheritance);
+        table.getColumnModel().getColumn(RuleTableModel.COL_PROXY).setCellRenderer(inheritance);
+        table.getColumnModel().getColumn(RuleTableModel.COL_TIMEOUT).setCellRenderer(inheritance);
+
         // Auto-save accepts half-finished rows, so flag the ones that will not match anything
         // rather than blocking the save.
         table.getColumnModel().getColumn(RuleTableModel.COL_HOST).setCellRenderer(new DefaultTableCellRenderer() {
@@ -405,6 +413,127 @@ public class SettingsTab {
      * Sets the share of the table this column gets, plus the width below which its content
      * becomes unreadable.
      */
+    /**
+     * What a cell resolves to at request time.
+     *
+     * @param text     what to show.
+     * @param explicit true when the value was typed into this row; false when it is inherited or
+     *                 not used, which is rendered in the muted color.
+     * @param tooltip  the reason, or null to keep the column's own help text.
+     */
+    private record ResolvedCell(String text, boolean explicit, String tooltip) {
+        static ResolvedCell own(String text) {
+            return new ResolvedCell(text, true, null);
+        }
+
+        static ResolvedCell muted(String text, String tooltip) {
+            return new ResolvedCell(text, false, tooltip);
+        }
+    }
+
+    /**
+     * Works out what a rule cell actually resolves to, mirroring
+     * {@link FingerprintRule#applyTo(TransportConfig)}.
+     * <p>
+     * The fingerprint and hex columns are the subtle pair: setting either one silences the other
+     * for that row rather than falling back to the Defaults tab, so a row with a hex stream never
+     * uses its own fingerprint column. Saying so in the cell is the only way that is discoverable.
+     */
+    private ResolvedCell resolveCell(int row, int column, String own) {
+        // Ask the real code what this row resolves to instead of restating its precedence rules,
+        // which would silently start lying the moment applyTo changes.
+        var effective = new TransportConfig();
+        effective.Fingerprint = settings.getFingerprint();
+        effective.HexClientHello = settings.getHexClientHello();
+        effective.ExternalProxyUrl = settings.getExternalProxyUrl();
+        effective.HttpTimeout = settings.getHttpTimeout();
+        ruleTableModel.ruleAt(row).applyTo(effective);
+
+        var value = switch (column) {
+            case RuleTableModel.COL_FINGERPRINT -> effective.Fingerprint;
+            case RuleTableModel.COL_HEX -> effective.HexClientHello;
+            case RuleTableModel.COL_PROXY -> effective.ExternalProxyUrl;
+            case RuleTableModel.COL_TIMEOUT -> String.valueOf(effective.HttpTimeout);
+            default -> own;
+        };
+        value = value == null ? "" : value.trim();
+
+        if (!own.isEmpty()) {
+            if (own.equals(value)) {
+                return ResolvedCell.own(own);
+            }
+            // Typed in, but another column of the same row overrode it.
+            return ResolvedCell.muted(own + "   (not used)", overriddenReason(column));
+        }
+
+        if (!value.isEmpty()) {
+            return ResolvedCell.muted(value, "Inherited from the Defaults tab.");
+        }
+
+        return ResolvedCell.muted(emptyLabel(column, row), emptyReason(column, row));
+    }
+
+    private static String overriddenReason(int column) {
+        if (column == RuleTableModel.COL_FINGERPRINT) {
+            return "Not used: this row's Hex ClientHello takes precedence over the fingerprint.";
+        }
+        return "Not used: another column of this row takes precedence.";
+    }
+
+    /**
+     * A blank fingerprint or hex cell means two very different things depending on its sibling,
+     * so say which one applies rather than showing "(none)" for both.
+     */
+    private String emptyLabel(int column, int row) {
+        if (column == RuleTableModel.COL_FINGERPRINT && hasOwnHex(row)) {
+            return "(not used — hex wins)";
+        }
+        if (column == RuleTableModel.COL_HEX && hasOwnFingerprint(row)) {
+            return "(not used — fingerprint set for this row)";
+        }
+        return "(none)";
+    }
+
+    private String emptyReason(int column, int row) {
+        if (column == RuleTableModel.COL_FINGERPRINT && hasOwnHex(row)) {
+            return "Not used: this row's Hex ClientHello takes precedence over the fingerprint.";
+        }
+        if (column == RuleTableModel.COL_HEX && hasOwnFingerprint(row)) {
+            return "Setting a fingerprint on a row clears the hex ClientHello it would otherwise inherit.";
+        }
+        return "Empty here, and the Defaults tab does not set one either.";
+    }
+
+    private boolean hasOwnHex(int row) {
+        return !ruleTableModel.ruleAt(row).hexClientHello.isEmpty();
+    }
+
+    private boolean hasOwnFingerprint(int row) {
+        return !ruleTableModel.ruleAt(row).fingerprint.isEmpty();
+    }
+
+    private final class InheritanceRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable owner, Object value, boolean selected,
+                                                       boolean focused, int row, int column) {
+            var component = super.getTableCellRendererComponent(owner, value, selected, focused, row, column);
+
+            var modelColumn = owner.convertColumnIndexToModel(column);
+            var resolved = resolveCell(owner.convertRowIndexToModel(row), modelColumn,
+                    value == null ? "" : value.toString().trim());
+
+            setText(resolved.text());
+            setToolTipText(resolved.tooltip() != null
+                    ? resolved.tooltip()
+                    : RuleTableModel.COLUMN_HELP[modelColumn]);
+
+            if (!resolved.explicit()) {
+                component.setForeground(hintColor());
+            }
+            return component;
+        }
+    }
+
     private static void setColumnWidth(JTable table, int column, int preferred, int minimum) {
         var col = table.getColumnModel().getColumn(column);
         col.setPreferredWidth(preferred);
@@ -649,6 +778,9 @@ public class SettingsTab {
                 return;
             }
         }
+
+        // Rule cells show the values they inherit from this tab, so they are now stale.
+        ruleTable.repaint();
 
         var message = "Saved.";
         if (addressChanged) {
@@ -982,6 +1114,15 @@ public class SettingsTab {
                 out.add(rule);
             }
             return out;
+        }
+
+        /**
+         * @return the row's rule, with its timeout column parsed. Never null for a valid row index.
+         */
+        FingerprintRule ruleAt(int row) {
+            var rule = rules.get(row).normalized();
+            rule.httpTimeout = parseTimeout(timeouts.get(row));
+            return rule;
         }
 
         /**
