@@ -18,6 +18,7 @@ public class Extension implements BurpExtension {
     private MontoyaApi api;
     private Gson gson;
     private Settings settings;
+    private SettingsTab settingsTab;
 
     private static final String HEADER_KEY = "Awesometlsconfig";
 
@@ -26,6 +27,7 @@ public class Extension implements BurpExtension {
         this.api = api;
         this.gson = new Gson();
         this.settings = new Settings(api);
+        this.settingsTab = new SettingsTab(settings);
 
         api.extension().setName("Awesome TLS");
         api.extension().registerUnloadingHandler(() -> {
@@ -34,7 +36,7 @@ public class Extension implements BurpExtension {
                 api.logging().logToError(err);
             }
         });
-        api.userInterface().registerSuiteTab("Awesome TLS", new SettingsTab(settings).getUI());
+        api.userInterface().registerSuiteTab("Awesome TLS", settingsTab.getUI());
         api.proxy().registerRequestHandler(new ProxyRequestHandler() {
             @Override
             public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest interceptedRequest) {
@@ -47,14 +49,25 @@ public class Extension implements BurpExtension {
             }
         });
 
+        var listenAddress = settings.getSpoofProxyAddress();
         new Thread(() -> {
-            var err = ServerLibrary.INSTANCE.StartServer(settings.getSpoofProxyAddress());
+            // StartServer blocks for the lifetime of the server. A failure to bind returns within
+            // milliseconds, so this optimistic status is corrected below before anyone can read it.
+            settingsTab.setServerStatus("Running — listening on " + listenAddress, false);
+
+            var err = ServerLibrary.INSTANCE.StartServer(listenAddress);
+
+            // Reaching here means the server stopped, or never managed to start.
             if (!err.isEmpty()) {
                 api.logging().logToError(err);
+                settingsTab.setServerStatus("Stopped — " + err, true);
+
                 var isGraceful = err.contains("Server stopped") || err.contains("address already in use");
                 if (!isGraceful) {
                     api.extension().unload(); // fatal error; disable the extension
                 }
+            } else {
+                settingsTab.setServerStatus("Stopped", true);
             }
         }).start();
     }
@@ -72,7 +85,7 @@ public class Extension implements BurpExtension {
                 headerOrder[i] = request.headers().get(i).name();
             }
 
-            var transportConfig = settings.toTransportConfig();
+            var transportConfig = settings.toTransportConfig(requestURL.getHost());
             transportConfig.Host = requestURL.getHost();
             transportConfig.Scheme = requestURL.getProtocol();
             transportConfig.HeaderOrder = headerOrder;

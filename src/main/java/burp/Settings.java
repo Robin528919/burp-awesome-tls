@@ -1,10 +1,26 @@
 package burp;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.logging.Logging;
 import burp.api.montoya.persistence.Preferences;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 
+import java.util.List;
+
+/**
+ * Configuration store for the extension.
+ * <p>
+ * Every value is cached in memory and served from there, because
+ * {@link #toTransportConfig(String)} runs on every proxied request and Burp's
+ * {@link Preferences} is a persistence layer, not a hash map. Writes update the cache and
+ * the store together. Fields are volatile because the UI writes them on the EDT while
+ * proxy threads read them concurrently.
+ */
 public class Settings {
     private final Preferences storage;
+    private final Logging logging;
+    private final Gson gson = new Gson();
 
     private final String spoofProxyAddress = "SpoofProxyAddress";
     private final String interceptProxyAddress = "InterceptProxyAddress";
@@ -14,6 +30,7 @@ public class Settings {
     private final String useInterceptedFingerprint = "UseInterceptedFingerprint";
     private final String httpTimeout = "HttpTimeout";
     private final String externalProxyUrl = "ExternalProxyUrl";
+    private final String domainRules = "DomainRules";
 
     public static final String DEFAULT_SPOOF_PROXY_ADDRESS = "127.0.0.1:8887";
     public static final String DEFAULT_INTERCEPT_PROXY_ADDRESS = "127.0.0.1:8886";
@@ -23,11 +40,38 @@ public class Settings {
     public static final Boolean USE_INTERCEPTED_FINGERPRINT = false;
     public static final String DEFAULT_EXTERNAL_PROXY_URL = "";
 
+    private volatile String cachedSpoofProxyAddress;
+    private volatile String cachedInterceptProxyAddress;
+    private volatile String cachedBurpProxyAddress;
+    private volatile String cachedFingerprint;
+    private volatile String cachedHexClientHello;
+    private volatile String cachedExternalProxyUrl;
+    private volatile int cachedHttpTimeout;
+    private volatile boolean cachedUseInterceptedFingerprint;
+
+    /**
+     * Immutable snapshot; replaced wholesale on save so readers never see a half-written list.
+     */
+    private volatile List<FingerprintRule> cachedRules;
+    private volatile RuleMatcher matcher;
+
     public Settings(MontoyaApi api) {
         this.storage = api.persistence().preferences();
+        this.logging = api.logging();
+
+        this.cachedSpoofProxyAddress = read(spoofProxyAddress, DEFAULT_SPOOF_PROXY_ADDRESS);
+        this.cachedInterceptProxyAddress = read(interceptProxyAddress, DEFAULT_INTERCEPT_PROXY_ADDRESS);
+        this.cachedBurpProxyAddress = read(burpProxyAddress, DEFAULT_BURP_PROXY_ADDRESS);
+        this.cachedFingerprint = read(fingerprint, DEFAULT_TLS_FINGERPRINT);
+        this.cachedHexClientHello = read(hexClientHello, "");
+        this.cachedExternalProxyUrl = read(externalProxyUrl, DEFAULT_EXTERNAL_PROXY_URL);
+        this.cachedHttpTimeout = read(httpTimeout, DEFAULT_HTTP_TIMEOUT);
+        this.cachedUseInterceptedFingerprint = read(useInterceptedFingerprint, USE_INTERCEPTED_FINGERPRINT);
+
+        setRules(loadRules());
     }
 
-    public String read(String key, String defaultValue) {
+    private String read(String key, String defaultValue) {
         var value = this.storage.getString(key);
         if (value == null || value.isEmpty()) {
             this.write(key, defaultValue);
@@ -36,7 +80,7 @@ public class Settings {
         return value;
     }
 
-    public Boolean read(String key, Boolean defaultValue) {
+    private Boolean read(String key, Boolean defaultValue) {
         var value = this.storage.getBoolean(key);
         if (value == null) {
             this.storage.setBoolean(key, defaultValue);
@@ -45,7 +89,7 @@ public class Settings {
         return value;
     }
 
-    public Integer read(String key, Integer defaultValue) {
+    private Integer read(String key, Integer defaultValue) {
         var value = this.storage.getInteger(key);
         if (value == null) {
             this.storage.setInteger(key, defaultValue);
@@ -67,82 +111,137 @@ public class Settings {
     }
 
     public String getSpoofProxyAddress() {
-        return this.read(this.spoofProxyAddress, DEFAULT_SPOOF_PROXY_ADDRESS);
+        return this.cachedSpoofProxyAddress;
     }
 
     public void setSpoofProxyAddress(String spoofProxyAddress) {
+        this.cachedSpoofProxyAddress = spoofProxyAddress;
         this.write(this.spoofProxyAddress, spoofProxyAddress);
     }
 
     public String getInterceptProxyAddress() {
-        return this.read(this.interceptProxyAddress, DEFAULT_INTERCEPT_PROXY_ADDRESS);
+        return this.cachedInterceptProxyAddress;
     }
 
     public void setInterceptProxyAddress(String interceptProxyAddress) {
+        this.cachedInterceptProxyAddress = interceptProxyAddress;
         this.write(this.interceptProxyAddress, interceptProxyAddress);
     }
 
     public String getBurpProxyAddress() {
-        return this.read(this.burpProxyAddress, DEFAULT_BURP_PROXY_ADDRESS);
+        return this.cachedBurpProxyAddress;
     }
 
     public void setBurpProxyAddress(String burpProxyAddress) {
+        this.cachedBurpProxyAddress = burpProxyAddress;
         this.write(this.burpProxyAddress, burpProxyAddress);
     }
 
     public Boolean getUseInterceptedFingerprint() {
-        return this.read(this.useInterceptedFingerprint, USE_INTERCEPTED_FINGERPRINT);
+        return this.cachedUseInterceptedFingerprint;
     }
 
     public void setUseInterceptedFingerprint(Boolean useInterceptedFingerprint) {
+        this.cachedUseInterceptedFingerprint = useInterceptedFingerprint;
         this.write(this.useInterceptedFingerprint, useInterceptedFingerprint);
     }
 
     public int getHttpTimeout() {
-        return this.read(this.httpTimeout, DEFAULT_HTTP_TIMEOUT);
+        return this.cachedHttpTimeout;
     }
 
     public void setHttpTimeout(Integer httpTimeout) {
+        this.cachedHttpTimeout = httpTimeout;
         this.write(this.httpTimeout, httpTimeout);
     }
 
     public String getFingerprint() {
-        return this.read(this.fingerprint, DEFAULT_TLS_FINGERPRINT);
+        return this.cachedFingerprint;
     }
 
     public void setFingerprint(String fingerprint) {
+        this.cachedFingerprint = fingerprint;
         this.write(this.fingerprint, fingerprint);
     }
 
     public String getHexClientHello() {
-        return this.read(this.hexClientHello, "");
+        return this.cachedHexClientHello;
     }
 
     public void setHexClientHello(String hexClientHello) {
+        this.cachedHexClientHello = hexClientHello;
         this.write(this.hexClientHello, hexClientHello);
     }
 
     public String getExternalProxyUrl() {
-        return this.read(this.externalProxyUrl, DEFAULT_EXTERNAL_PROXY_URL);
+        return this.cachedExternalProxyUrl;
     }
 
     public void setExternalProxyUrl(String externalProxyUrl) {
+        this.cachedExternalProxyUrl = externalProxyUrl;
         this.write(this.externalProxyUrl, externalProxyUrl);
+    }
+
+    /**
+     * @return the configured per-domain rules, in display order.
+     */
+    public List<FingerprintRule> getRules() {
+        return this.cachedRules;
+    }
+
+    public void setRules(List<FingerprintRule> rules) {
+        // Filter nulls rather than using List.copyOf directly: hand-edited JSON such as
+        // "[null, {...}]" deserializes to a list with null entries, which copyOf rejects.
+        var snapshot = rules.stream().filter(java.util.Objects::nonNull).toList();
+        this.cachedRules = snapshot;
+        this.matcher = new RuleMatcher(snapshot);
+        this.write(this.domainRules, gson.toJson(snapshot));
+    }
+
+    private List<FingerprintRule> loadRules() {
+        var json = this.storage.getString(this.domainRules);
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+
+        try {
+            List<FingerprintRule> parsed = gson.fromJson(json, new TypeToken<List<FingerprintRule>>() {
+            }.getType());
+            return parsed == null ? List.of() : parsed;
+        } catch (Exception e) {
+            // Corrupt or hand-edited JSON must not take the extension down; fall back to no rules.
+            logging.logToError("Failed to parse domain rules, ignoring them: " + e);
+            return List.of();
+        }
     }
 
     public String[] getFingerprints() {
         return ServerLibrary.INSTANCE.GetFingerprints().split("\n");
     }
 
-    public TransportConfig toTransportConfig() {
+    /**
+     * Builds the per-request configuration sent to the Go server, applying the most specific
+     * domain rule for {@code host} on top of the global defaults.
+     */
+    public TransportConfig toTransportConfig(String host) {
         var transportConfig = new TransportConfig();
         transportConfig.Fingerprint = this.getFingerprint();
         transportConfig.HexClientHello = this.getHexClientHello();
         transportConfig.HttpTimeout = this.getHttpTimeout();
+        transportConfig.ExternalProxyUrl = this.getExternalProxyUrl();
+
+        // These stay global on purpose: the Go server starts and stops a single shared
+        // intercept proxy based on these values, so varying them per request would make it
+        // thrash (see server.go:51-63).
         transportConfig.UseInterceptedFingerprint = this.getUseInterceptedFingerprint();
         transportConfig.BurpAddr = this.getBurpProxyAddress();
         transportConfig.InterceptProxyAddr = this.getInterceptProxyAddress();
-        transportConfig.ExternalProxyUrl = this.getExternalProxyUrl();
+
+        var rule = this.matcher.match(host);
+        if (rule != null) {
+            rule.applyTo(transportConfig);
+        }
+
         return transportConfig;
     }
 }
