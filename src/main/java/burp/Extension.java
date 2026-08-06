@@ -36,7 +36,11 @@ public class Extension implements BurpExtension {
                 api.logging().logToError(err);
             }
         });
-        api.userInterface().registerSuiteTab("Awesome TLS", settingsTab.getUI());
+        var ui = settingsTab.getUI();
+        // Burp's own styling pass: font size, colors and table line spacing, matched to the
+        // active theme. Cheaper and more correct than deriving all of that from UIManager.
+        api.userInterface().applyThemeToComponent(ui);
+        api.userInterface().registerSuiteTab("Awesome TLS", ui);
         api.proxy().registerRequestHandler(new ProxyRequestHandler() {
             @Override
             public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest interceptedRequest) {
