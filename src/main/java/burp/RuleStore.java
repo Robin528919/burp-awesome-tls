@@ -32,6 +32,14 @@ final class RuleStore {
 
     static final String FILE_NAME = "rules.json";
 
+    /**
+     * The directory the extension keeps its state in, named after the repository.
+     * {@link #LEGACY_DIR_NAME} is what setups predating the {@code -plus} rename used.
+     */
+    static final String DIR_NAME = "burp-awesome-tls-plus";
+
+    static final String LEGACY_DIR_NAME = "burp-awesome-tls";
+
     private final Path file;
     private final Consumer<String> errorLog;
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
@@ -48,6 +56,17 @@ final class RuleStore {
      * ~/.config elsewhere.
      */
     static Path configDir() {
+        return configBase().resolve(DIR_NAME);
+    }
+
+    /**
+     * Where a setup predating the {@code -plus} rename keeps its rules.
+     */
+    static Path legacyConfigDir() {
+        return configBase().resolve(LEGACY_DIR_NAME);
+    }
+
+    private static Path configBase() {
         var os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         var home = System.getProperty("user.home", ".");
 
@@ -67,11 +86,43 @@ final class RuleStore {
             base = home;
         }
 
-        return Path.of(base, "burp-awesome-tls");
+        return Path.of(base);
     }
 
     static RuleStore inConfigDir(Consumer<String> errorLog) {
-        return new RuleStore(configDir().resolve(FILE_NAME), errorLog);
+        var store = new RuleStore(configDir().resolve(FILE_NAME), errorLog);
+        store.adoptFrom(legacyConfigDir());
+        return store;
+    }
+
+    /**
+     * Moves the rules of a setup predating the {@code -plus} rename into the current directory, so
+     * upgrading does not silently start from an empty rule list.
+     * <p>
+     * Keyed on the rules file rather than on the directory: the Go side creates the new directory
+     * for its CA as soon as the server starts, which may well happen before this runs.
+     */
+    void adoptFrom(Path legacyDir) {
+        if (exists() || legacyDir.equals(file.getParent())) {
+            return;
+        }
+
+        var legacy = legacyDir.resolve(FILE_NAME);
+        if (!Files.isRegularFile(legacy)) {
+            return;
+        }
+
+        try {
+            Files.createDirectories(file.getParent());
+            Files.move(legacy, file);
+
+            var legacyBackup = legacyDir.resolve(backupPath().getFileName());
+            if (Files.isRegularFile(legacyBackup)) {
+                Files.move(legacyBackup, backupPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            errorLog.accept("Could not move " + legacy + " to " + file + ": " + e);
+        }
     }
 
     Path path() {
@@ -260,8 +311,32 @@ final class RuleStore {
         check(Files.exists(file.resolveSibling(FILE_NAME + ".corrupt")), "corrupt content is quarantined");
         check(!errors.isEmpty(), "corrupt content is reported");
 
-        check(configDir().endsWith("burp-awesome-tls"), "the config dir is namespaced");
+        check(configDir().endsWith(DIR_NAME), "the config dir is namespaced");
         check(configDir().isAbsolute(), "the config dir is absolute");
+        check(legacyConfigDir().equals(configDir().resolveSibling(LEGACY_DIR_NAME)),
+                "the pre-rename dir sits beside the current one");
+
+        // The rename must not strand the rules of an existing setup.
+        var legacyDir = Files.createDirectory(dir.resolve(LEGACY_DIR_NAME));
+        var currentDir = Files.createDirectory(dir.resolve(DIR_NAME));
+        var legacyStore = new RuleStore(legacyDir.resolve(FILE_NAME), errors::add);
+        legacyStore.save(List.of(new FingerprintRule("old.com", "chrome", "", "", null, true)));
+        legacyStore.save(List.of(new FingerprintRule("new.com", "firefox", "", "", null, true)));
+
+        var adopted = new RuleStore(currentDir.resolve(FILE_NAME), errors::add);
+        adopted.adoptFrom(legacyDir);
+        check(adopted.load().size() == 1 && adopted.load().get(0).hostPattern.equals("new.com"),
+                "rules move across from the pre-rename dir");
+        check(parse(Files.readString(adopted.backupPath())).get(0).hostPattern.equals("old.com"),
+                "the .bak moves across with them");
+        check(!legacyStore.exists(), "the pre-rename file is not left behind to diverge");
+
+        // Whatever is in the current directory always wins; a second run must not resurrect old rules.
+        legacyStore.save(List.of(
+                new FingerprintRule("a.com", "chrome", "", "", null, true),
+                new FingerprintRule("b.com", "chrome", "", "", null, true)));
+        adopted.adoptFrom(legacyDir);
+        check(adopted.load().size() == 1, "an existing file is never overwritten by the pre-rename one");
 
         System.out.println("RuleStore self-check passed (" + dir + ")");
     }

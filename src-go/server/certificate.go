@@ -21,6 +21,11 @@ import (
 const (
 	caFile    = "ca.der"
 	caKeyFile = "caKey.der"
+
+	// configDirName is the directory under os.UserConfigDir that holds the CA and, written by the
+	// Java side, rules.json. legacyConfigDirName is what setups predating the -plus rename used.
+	configDirName       = "burp-awesome-tls-plus"
+	legacyConfigDirName = "burp-awesome-tls"
 )
 
 // While generating a new certificate, in order to get a unique serial
@@ -28,13 +33,33 @@ const (
 var currentSerialNumber = time.Now().Unix()
 
 func getAbsoluteFilePath(file string) string {
-	if userConfigDir, err := os.UserConfigDir(); err == nil {
-		configDir := path.Join(userConfigDir, "burp-awesome-tls")
-		_ = os.Mkdir(configDir, 0o700)
-		return path.Join(configDir, file)
+	userConfigDir, err := os.UserConfigDir()
+	if err != nil {
+		return file
 	}
 
-	return file
+	return resolveConfigFile(userConfigDir, file)
+}
+
+// resolveConfigFile returns where file lives under baseDir, creating the directory and adopting
+// the equivalent file from a setup predating the -plus rename.
+//
+// Adopting matters for the CA: regenerating it would make every client that trusts the old one
+// start failing. The condition is the file rather than the directory, because the Java side
+// creates the same directory for rules.json whenever it happens to start first.
+func resolveConfigFile(baseDir, file string) string {
+	configDir := path.Join(baseDir, configDirName)
+	_ = os.Mkdir(configDir, 0o700)
+	target := path.Join(configDir, file)
+
+	if _, err := os.Stat(target); errors.Is(err, os.ErrNotExist) {
+		legacy := path.Join(baseDir, legacyConfigDirName, file)
+		if _, err := os.Stat(legacy); err == nil {
+			_ = os.Rename(legacy, target)
+		}
+	}
+
+	return target
 }
 
 func readCertFromDisk(file string) (*x509.Certificate, error) {

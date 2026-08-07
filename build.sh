@@ -8,7 +8,8 @@ buildJar() {
   local targetPlatform="$1"
   echo "building $targetPlatform jar"
   ./gradlew buildJar
-  mv ./build/libs/burp-awesome-tls.jar "./build/libs/Burp-Awesome-TLS-$targetPlatform.jar"
+  # The source name comes from rootProject.name in settings.gradle; keep the two in sync.
+  mv ./build/libs/burp-awesome-tls-plus.jar "./build/libs/Burp-Awesome-TLS-Plus-$targetPlatform.jar"
 }
 
 cleanup() {
