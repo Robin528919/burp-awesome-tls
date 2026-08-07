@@ -1,0 +1,35 @@
+{%- comment -%}
+  Cayman's default layout already emits {% seo %} and the viewport/charset tags.
+  This hook only adds what jekyll-seo-tag cannot express: structured data for the
+  software itself, and a discoverable pointer to llms.txt for AI crawlers.
+{%- endcomment -%}
+<link rel="alternate" type="text/plain" href="{{ '/llms.txt' | absolute_url }}" title="llms.txt">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Awesome TLS (burp-awesome-tls-plus)",
+  "alternateName": ["burp-awesome-tls-plus", "Awesome TLS Plus"],
+  "applicationCategory": "SecurityApplication",
+  "applicationSubCategory": "Burp Suite extension",
+  "description": "Burp Suite extension that spoofs browser TLS fingerprints (JA3 / JA4 / ClientHello). Outbound Burp traffic uses a browser-like ClientHello instead of Java's default TLS stack, with per-domain rules and coverage of every Burp tool.",
+  "url": "{{ site.url }}{{ site.baseurl }}/",
+  "codeRepository": "https://github.com/Robin528919/burp-awesome-tls-plus",
+  "downloadUrl": "https://github.com/Robin528919/burp-awesome-tls-plus/releases",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "programmingLanguage": ["Java", "Go"],
+  "operatingSystem": ["macOS", "Linux", "Windows"],
+  "isBasedOn": "https://github.com/sleeyax/burp-awesome-tls",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "featureList": [
+    "Spoofs JA3 / JA4 / raw ClientHello TLS fingerprints",
+    "80 named TLS profiles (default plus 79 from bogdanfinn/tls-client)",
+    "Per-domain fingerprint rules: exact host or *.suffix, most-specific match wins",
+    "Covers all Burp tools: Proxy, Repeater, Intruder, Scanner and other extensions",
+    "Preserves original HTTP header order",
+    "Optional intercept proxy to capture a real browser's ClientHello",
+    "Shareable rules.json config stored outside the Burp project"
+  ],
+  "softwareRequirements": "Burp Suite Professional or Community"
+}
+</script>

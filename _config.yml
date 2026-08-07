@@ -1,0 +1,40 @@
+# GitHub Pages site for burp-awesome-tls-plus.
+# README.md becomes the site index; docs/*.md become sub-pages.
+# The point of this site is to be an indexable, submittable surface — the GitHub
+# repo page itself cannot be verified in Google Search Console, this can.
+
+title: Awesome TLS — burp-awesome-tls-plus
+description: >-
+  Burp Suite extension that spoofs browser TLS fingerprints (JA3 / JA4 / ClientHello)
+  with per-domain rules. Covers Proxy, Repeater, Intruder, Scanner and other extensions.
+url: https://robin528919.github.io
+baseurl: /burp-awesome-tls-plus
+lang: en
+
+theme: jekyll-theme-cayman
+
+plugins:
+  - jekyll-seo-tag
+  - jekyll-relative-links
+  - jekyll-sitemap
+
+# Rewrites ./docs/faq.md links to ./docs/faq.html so README's relative links survive.
+relative_links:
+  enabled: true
+  collections: false
+
+# Build artefacts and agent config are not content.
+exclude:
+  - src/
+  - src-go/
+  - build/
+  - gradle/
+  - gradlew
+  - gradlew.bat
+  - build.gradle
+  - build.sh
+  - settings.gradle
+  - CLAUDE.md
+  - skills-lock.json
+  - renovate.json
+  - README.zh-CN.md.orig
