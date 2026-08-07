@@ -1,6 +1,12 @@
-# Awesome TLS
+# Awesome TLS — Burp Suite TLS Fingerprint Spoofing Extension
 
 **English** | [简体中文](./README.zh-CN.md)
+
+[![Release](https://img.shields.io/github/v/release/Robin528919/burp-awesome-tls-plus?display_name=tag&sort=semver)](https://github.com/Robin528919/burp-awesome-tls-plus/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/Robin528919/burp-awesome-tls-plus/releases)
+[![Burp](https://img.shields.io/badge/Burp%20Suite-Pro%20%26%20Community-orange)](https://portswigger.net/burp)
+[![llms.txt](https://img.shields.io/badge/llms.txt-available-green)](./llms.txt)
 
 > **This is a fork of [sleeyax/burp-awesome-tls](https://github.com/sleeyax/burp-awesome-tls).**
 > The original extension — its design, its Go/JNA architecture and essentially all of the code this
@@ -8,14 +14,26 @@
 > This fork continues development on top of it; see [what this fork adds](#what-this-fork-adds).
 > Distributed under GPL v3, the same license as upstream.
 
-This extension hijacks Burp's HTTP and TLS stack, allowing you to spoof any browser TLS
-fingerprint ([JA3](https://github.com/salesforce/ja3)).
-It boosts the power of Burp Suite while reducing the likelihood of fingerprinting by various WAFs like CloudFlare,
-PerimeterX, Akamai, DataDome, etc.
+## What is Awesome TLS?
 
-This extension works without resorting to ugly hacks, reflection or forked Burp Suite Community code.
+**Awesome TLS** is a [Burp Suite](https://portswigger.net/burp) extension that **spoofs browser TLS fingerprints** (JA3 / JA4 / ClientHello) so outbound traffic from Burp no longer looks like Java’s default TLS stack.
+
+It is used by security researchers and pentesters to reduce WAF and bot-detection blocks (Cloudflare, PerimeterX, Akamai, DataDome, and similar) while testing with **Proxy, Repeater, Intruder, and Scanner**.
+
+Unlike workarounds that patch Burp or fork Community builds, this extension routes requests through a local Go TLS stack ([utls](https://github.com/refraction-networking/utls) / [tls-client](https://github.com/bogdanfinn/tls-client)) via JNA — no reflection, no private Burp APIs.
+
+| Need | What this extension does |
+| --- | --- |
+| Burp looks like Java TLS / bot traffic | Spoofs Chrome, Firefox, Safari, mobile, or custom ClientHello fingerprints |
+| One global fingerprint is not enough | **Per-domain rules** (exact host or `*.suffix`) with global defaults as fallback |
+| Only Proxy should be spoofed | Covers **all Burp tools**: Proxy, Repeater, Intruder, Scanner |
+| Cloudflare bot score is low | Improves TLS/HTTP2 fingerprint alignment (see [showcase](#showcase)) |
+
+**Keywords:** Burp Suite extension, TLS fingerprint spoofing, JA3, JA4, ClientHello, Cloudflare bot detection, WAF bypass, utls, HTTP/2 fingerprint, per-domain fingerprint rules.
 
 ![screenshot](./docs/settings.png)
+
+**Quick links:** [Install](#installation) · [Configuration](#configuration) · [How it works](#how-it-works) · [FAQ](#faq) · [Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases) · [AI summary (`llms.txt`)](./llms.txt) · [中文文档](./README.zh-CN.md)
 
 ---
 
@@ -85,15 +103,10 @@ flowchart LR
 
 ## Installation
 
-1. Download the jar file for your operating system
-   from [this fork's releases](https://github.com/Robin528919/burp-awesome-tls/releases). You can also download a fat
-   jar, which works on all platforms supported by Awesome TLS. This means it's also portable and could be loaded from a
-   USB for cross-platform access.
-   (Upstream builds live at [sleeyax/burp-awesome-tls/releases](https://github.com/sleeyax/burp-awesome-tls/releases).)
-2. Open burp (pro or community), go to Extender > Extensions and click on 'Add'. Then, select `Java` as the extension
-   type and browse to the jar file you just downloaded. Click 'Next' at the bottom, and it should load the extension
-   without any errors.
-3. Check your new 'Awesome TLS' tab in Burp for configuration settings and start hacking!
+1. Download the jar for your OS from **[this fork’s releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases)** (latest: v2.3.x). A fat jar is also published for all supported platforms (portable / USB-friendly).
+   Upstream builds: [sleeyax/burp-awesome-tls/releases](https://github.com/sleeyax/burp-awesome-tls/releases).
+2. In Burp (Pro or Community): **Extensions → Installed → Add** → extension type **Java** → select the jar → **Next**. It should load without errors.
+3. Open the **Awesome TLS** suite tab, pick a fingerprint (or domain rules), and send traffic from Proxy / Repeater / Intruder / Scanner.
 
 ## Configuration
 
@@ -201,6 +214,52 @@ are enough. See [workflows](.github/workflows) for the target language versions.
 
 You should now have one jar file (usually located at `./build/libs`) that works with Burp on your operating system.
 
+## FAQ
+
+### What is a Burp Suite TLS fingerprint spoofing extension?
+
+It is software loaded into Burp Suite that changes the TLS ClientHello (and related HTTP/2 signals) of outgoing requests so remote servers see a browser-like fingerprint instead of Burp’s default Java TLS fingerprint.
+
+### How does Awesome TLS differ from the upstream `sleeyax/burp-awesome-tls`?
+
+This fork keeps the same Go + JNA architecture and adds **per-domain fingerprint rules**, coverage of **all Burp tools** (not only Proxy), **auto-saving rules** in a shareable `rules.json`, and UI/theme fixes. See [what this fork adds](#what-this-fork-adds).
+
+### Does Awesome TLS work with Burp Community Edition?
+
+Yes. Load the Java extension jar in Extender / Extensions the same way as on Burp Professional.
+
+### Can I set different JA3 / TLS fingerprints per host?
+
+Yes. Use the **Domain rules** tab: exact hosts (`example.com`) or wildcards (`*.example.com`). Empty fields inherit **Defaults**. Matching is most-specific-wins (exact > longer wildcard > shorter wildcard); row order does not matter.
+
+### Does it help against Cloudflare, Akamai, DataDome, or PerimeterX?
+
+It improves the **TLS / HTTP fingerprint** layer those systems use. It is not a guarantee of full bot-score success — application behavior, cookies, JS challenges, and IP reputation still matter. See the [Cloudflare bot score showcase](#showcase).
+
+### Which Burp tools get the spoofed fingerprint?
+
+Proxy, Repeater, Intruder, and Scanner. Burp suite-internal traffic (updates, Collaborator polling) is left alone.
+
+### How do I verify the fingerprint after enabling the extension?
+
+Compare against public checkers such as [tls.peet.ws](https://tls.peet.ws/), [tlsfingerprint.io](https://tlsfingerprint.io/), or [scrapfly HTTP/2 fingerprint tools](https://scrapfly.io/web-scraping-tools/http2-fingerprint), and bot-score demos like [Cloudflare connection tools](https://cloudflare.manfredi.io/en/tools/connection).
+
+### Where are domain rules stored?
+
+Outside the Burp project, as JSON:
+
+| OS | Path |
+| --- | --- |
+| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json` (or `~/.config/...`) |
+| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+
+### Is this for authorized security testing only?
+
+Yes. Use only on systems you own or have explicit permission to test. WAF evasion techniques must stay within legal and ethical boundaries.
+
+More detail: [docs/faq.md](./docs/faq.md). Machine-readable project summary: [llms.txt](./llms.txt).
+
 ## Credits
 
 First and foremost, this project is a fork of
@@ -233,3 +292,10 @@ And the creators of the following websites:
 This is a modified version of [sleeyax/burp-awesome-tls](https://github.com/sleeyax/burp-awesome-tls).
 The modifications are summarised under [what this fork adds](#what-this-fork-adds) and recorded in
 full in the commit history.
+
+## Repository
+
+- **GitHub:** https://github.com/Robin528919/burp-awesome-tls-plus
+- **Releases / downloads:** https://github.com/Robin528919/burp-awesome-tls-plus/releases
+- **Upstream:** https://github.com/sleeyax/burp-awesome-tls
+- **Topics:** `burp-suite`, `tls-fingerprint`, `ja3`, `ja4`, `waf-bypass`, `clienthello`, `utls`

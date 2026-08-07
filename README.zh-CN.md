@@ -1,6 +1,12 @@
-# Awesome TLS
+# Awesome TLS — Burp Suite TLS 指纹伪造扩展
 
 [English](./README.md) | **简体中文**
+
+[![Release](https://img.shields.io/github/v/release/Robin528919/burp-awesome-tls-plus?display_name=tag&sort=semver)](https://github.com/Robin528919/burp-awesome-tls-plus/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](https://github.com/Robin528919/burp-awesome-tls-plus/releases)
+[![Burp](https://img.shields.io/badge/Burp%20Suite-Pro%20%26%20Community-orange)](https://portswigger.net/burp)
+[![llms.txt](https://img.shields.io/badge/llms.txt-available-green)](./llms.txt)
 
 > **本项目是 [sleeyax/burp-awesome-tls](https://github.com/sleeyax/burp-awesome-tls) 的 fork。**
 > 原始扩展的设计、Go/JNA 架构，以及本项目所依赖的绝大部分代码，都出自
@@ -8,13 +14,26 @@
 > 本 fork 在其基础上继续开发，详见[本 fork 新增的功能](#本-fork-新增的功能)。
 > 遵循与上游相同的 GPL v3 协议。
 
-本扩展接管 Burp 的 HTTP 与 TLS 栈，让你可以伪造任意浏览器的 TLS
-指纹（[JA3](https://github.com/salesforce/ja3)）。
-它在增强 Burp Suite 能力的同时，降低被 CloudFlare、PerimeterX、Akamai、DataDome 等各类 WAF 识别的概率。
+## 什么是 Awesome TLS？
 
-实现上没有使用任何脏 hack、反射，也没有修改 Burp Suite Community 的源码。
+**Awesome TLS** 是一款 [Burp Suite](https://portswigger.net/burp) 扩展，用于**伪造浏览器 TLS 指纹**（JA3 / JA4 / ClientHello），使 Burp 发出的流量不再暴露 Java 默认 TLS 栈特征。
+
+安全研究人员与渗透测试人员常用它来降低 Cloudflare、PerimeterX、Akamai、DataDome 等 WAF / 机器人检测的拦截概率，并覆盖 **Proxy、Repeater、Intruder、Scanner** 等全部工具流量。
+
+实现上不通过反射或 fork Burp Community 源码，而是经 JNA 将请求路由到本地 Go TLS 栈（[utls](https://github.com/refraction-networking/utls) / [tls-client](https://github.com/bogdanfinn/tls-client)）。
+
+| 需求 | 本扩展的做法 |
+| --- | --- |
+| Burp 被识别为 Java TLS / 机器人流量 | 伪造 Chrome、Firefox、Safari、移动端或自定义 ClientHello |
+| 全局一个指纹不够用 | **按域名规则**（精确主机或 `*.后缀`），全局配置作兜底 |
+| 只想改 Proxy | 覆盖 **全部工具**：Proxy、Repeater、Intruder、Scanner |
+| Cloudflare bot score 偏低 | 改善 TLS/HTTP2 指纹对齐（见[效果展示](#效果展示)） |
+
+**关键词：** Burp Suite 扩展、TLS 指纹伪造、JA3、JA4、ClientHello、Cloudflare 机器人检测、WAF 绕过、utls、HTTP/2 指纹、按域名指纹规则。
 
 ![截图](./docs/settings.png)
+
+**快速导航：** [安装](#安装) · [配置](#配置) · [工作原理](#工作原理) · [常见问题](#常见问题-faq) · [Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases) · [AI 摘要（llms.txt）](./llms.txt) · [English](./README.md)
 
 ---
 
@@ -76,12 +95,10 @@ flowchart LR
 
 ## 安装
 
-1. 从[本 fork 的 releases](https://github.com/Robin528919/burp-awesome-tls/releases) 下载对应操作系统的 jar
-   文件。也可以下载 fat jar，它适用于 Awesome TLS 支持的所有平台，因此具备可移植性，可以放在 U 盘里跨平台使用。
-   （上游的构建产物在 [sleeyax/burp-awesome-tls/releases](https://github.com/sleeyax/burp-awesome-tls/releases)。）
-2. 打开 Burp（Pro 或 Community），进入 Extender > Extensions 并点击 'Add'。扩展类型选择 `Java`，然后选中刚下载的 jar
-   文件。点击底部的 'Next'，扩展应当能够无报错加载。
-3. 在 Burp 中打开新出现的 'Awesome TLS' 标签页进行配置，然后开始你的工作。
+1. 从 **[本 fork 的 Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases)** 下载对应操作系统的 jar（当前为 v2.3.x）。也可下载 fat jar，适用于全部支持平台，便于 U 盘跨平台使用。
+   上游构建产物：[sleeyax/burp-awesome-tls/releases](https://github.com/sleeyax/burp-awesome-tls/releases)。
+2. 打开 Burp（Pro 或 Community）→ **Extensions → Installed → Add** → 类型选 **Java** → 选择 jar → **Next**，应能无报错加载。
+3. 打开 **Awesome TLS** 标签页，选择指纹（或配置域名规则），即可让 Proxy / Repeater / Intruder / Scanner 的流量带上伪造指纹。
 
 ## 配置
 
@@ -173,6 +190,52 @@ flowchart LR
 
 完成后你会得到一个可在当前操作系统上配合 Burp 使用的 jar 文件（通常位于 `./build/libs`）。
 
+## 常见问题 (FAQ)
+
+### 什么是 Burp Suite TLS 指纹伪造扩展？
+
+装入 Burp Suite 后，会改写外发请求的 TLS ClientHello（及相关 HTTP/2 特征），使远端服务器看到类似浏览器的指纹，而不是 Burp 默认的 Java TLS 指纹。
+
+### 与上游 `sleeyax/burp-awesome-tls` 有何不同？
+
+沿用同一套 Go + JNA 架构，本 fork 额外提供：**按域名指纹规则**、覆盖 **全部 Burp 工具**（不仅 Proxy）、**规则自动保存**为可共享的 `rules.json`，以及 UI/主题修复。详见[本 fork 新增的功能](#本-fork-新增的功能)。
+
+### 支持 Burp Community 吗？
+
+支持。在 Extender / Extensions 中以 Java 扩展方式加载 jar 即可，与 Professional 相同。
+
+### 能否按主机配置不同的 JA3 / TLS 指纹？
+
+可以。使用 **Domain rules** 标签页：精确主机（`example.com`）或通配符（`*.example.com`）。留空字段继承 **Defaults**。匹配规则为「最具体优先」（精确 > 更长通配符 > 更短通配符），与表格行顺序无关。
+
+### 对 Cloudflare、Akamai、DataDome、PerimeterX 有用吗？
+
+它改善这些系统使用的 **TLS / HTTP 指纹层**，但不能保证 bot score 一定满分——应用行为、Cookie、JS 挑战、IP 信誉仍有影响。可参考[效果展示](#效果展示)。
+
+### 哪些 Burp 工具会走伪造指纹？
+
+Proxy、Repeater、Intruder、Scanner。Burp 自身内部流量（更新检查、Collaborator 轮询等）不会被改写。
+
+### 启用后如何验证指纹？
+
+可用 [tls.peet.ws](https://tls.peet.ws/)、[tlsfingerprint.io](https://tlsfingerprint.io/)、[scrapfly HTTP/2 工具](https://scrapfly.io/web-scraping-tools/http2-fingerprint)，以及 [Cloudflare connection 演示](https://cloudflare.manfredi.io/en/tools/connection) 等公开检测站对比。
+
+### 域名规则存在哪里？
+
+存在 Burp 工程之外的 JSON 文件中：
+
+| 操作系统 | 路径 |
+| --- | --- |
+| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json`（或 `~/.config/...`） |
+| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+
+### 是否仅限授权安全测试？
+
+是。仅可在你拥有或已获明确授权的目标上使用。WAF 相关技术须遵守法律与职业道德。
+
+更多说明见 [docs/faq.md](./docs/faq.md)。机器可读项目摘要：[llms.txt](./llms.txt)。
+
 ## 致谢
 
 首先，本项目 fork 自 [@sleeyax](https://github.com/sleeyax) 的
@@ -193,6 +256,21 @@ header、ClientHello 解析 —— 全部如此。本 fork 只是在这个基础
 - https://tlsfingerprint.io/
 - https://kawayiyi.com/tls
 - https://tls.peet.ws/
+- https://cloudflare.manfredi.io/en/tools/connection
+- https://scrapfly.io/web-scraping-tools/http2-fingerprint
+
+## 许可证
+
+[GPL V3](./LICENSE)，继承自上游项目。
+
+本仓库为 [sleeyax/burp-awesome-tls](https://github.com/sleeyax/burp-awesome-tls) 的修改版本。改动摘要见[本 fork 新增的功能](#本-fork-新增的功能)，完整记录见提交历史。
+
+## 仓库信息
+
+- **GitHub：** https://github.com/Robin528919/burp-awesome-tls-plus
+- **下载 / Releases：** https://github.com/Robin528919/burp-awesome-tls-plus/releases
+- **上游：** https://github.com/sleeyax/burp-awesome-tls
+- **Topics：** `burp-suite`, `tls-fingerprint`, `ja3`, `ja4`, `waf-bypass`, `clienthello`, `utls`
 - https://cloudflare.manfredi.io/en/tools/connection
 - https://scrapfly.io/web-scraping-tools/http2-fingerprint
 

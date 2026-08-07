@@ -1,0 +1,69 @@
+# Awesome TLS (burp-awesome-tls-plus)
+
+> Burp Suite extension for spoofing browser TLS fingerprints (JA3/JA4/ClientHello) to reduce WAF bot detection. Fork of sleeyax/burp-awesome-tls with per-domain rules and full-tool coverage.
+
+## Project
+
+- Name: Awesome TLS (this fork: burp-awesome-tls-plus)
+- Repository: https://github.com/Robin528919/burp-awesome-tls-plus
+- Upstream: https://github.com/sleeyax/burp-awesome-tls
+- License: GPL-3.0
+- Languages: Java (Burp extension UI + HTTP handler), Go (local TLS spoof server via JNA / c-shared)
+- Platforms: macOS (x64/arm64), Linux (x86/x64/arm/arm64), Windows (x86/x64)
+- Burp: Professional and Community
+
+## One-sentence definition
+
+Awesome TLS hijacks Burp’s outbound HTTP/TLS path and re-sends requests through a local Go server built on utls/tls-client, so destinations observe a chosen browser TLS fingerprint instead of Java’s default stack.
+
+## Who it is for
+
+- Penetration testers and security researchers using Burp Suite
+- Users blocked by Cloudflare, Akamai, DataDome, PerimeterX, or similar WAF TLS fingerprinting
+- Teams needing different fingerprints per target domain
+
+## What this fork adds (vs upstream)
+
+- Per-domain fingerprint rules (exact host or `*.suffix`), global defaults as fallback
+- Spoofing for Proxy, Repeater, Intruder, and Scanner (not Proxy-only)
+- Rules stored as shareable JSON outside the Burp project; auto-save; import/export
+- Hand-written Swing UI with Burp theme support; several upstream save/forward bugs fixed
+
+## Key capabilities
+
+- Named browser fingerprint profiles (from tls-client / utls mappings)
+- Custom ClientHello via hex stream (e.g. from Wireshark)
+- Optional intercept proxy to capture and replay a real client fingerprint (global)
+- External proxy and timeout overrides per domain rule
+- Preserves original HTTP header order when forwarding
+
+## Architecture (short)
+
+1. Burp `HttpHandler` rewrites each eligible request: attaches config in magic header `Awesometlsconfig`, redirects service to local spoof server.
+2. Local HTTPS Go server parses config, strips header, builds utls/tls-client with selected fingerprint, forwards to real destination.
+3. Response streams back to Burp. Re-entry is avoided by detecting the magic header; Burp suite-internal traffic is skipped.
+
+## Important constraints
+
+- Fingerprint and Hex ClientHello must be overridden as a pair (hex wins if both set).
+- Advanced intercept fingerprint is global mutable state — cannot vary per domain.
+- New tls-client instance per request (no connection pool across requests).
+- Use only on authorized targets; not a complete bot-bypass for JS challenges or IP reputation.
+
+## Primary docs
+
+- [README (English)](https://github.com/Robin528919/burp-awesome-tls-plus/blob/main/README.md): install, config, architecture, FAQ
+- [README (简体中文)](https://github.com/Robin528919/burp-awesome-tls-plus/blob/main/README.zh-CN.md): Chinese documentation
+- [FAQ](https://github.com/Robin528919/burp-awesome-tls-plus/blob/main/docs/faq.md): citable Q&A for SEO/GEO
+- [Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases): prebuilt jars (per-OS and fat)
+
+## Verify fingerprint
+
+- https://tls.peet.ws/
+- https://tlsfingerprint.io/
+- https://scrapfly.io/web-scraping-tools/http2-fingerprint
+- https://cloudflare.manfredi.io/en/tools/connection
+
+## Related keywords
+
+Burp Suite extension, TLS fingerprint spoofing, JA3, JA4, ClientHello, Cloudflare bot score, WAF bypass, utls, tls-client, HTTP/2 fingerprint, per-domain TLS rules, Burp Repeater Intruder Scanner fingerprint
