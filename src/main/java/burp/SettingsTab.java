@@ -1010,12 +1010,17 @@ public class SettingsTab {
             add(component, constraints);
         }
 
+        /**
+         * No {@code weightx} on purpose: the note spans the label and field columns, so any weight
+         * here is taken from the filler column and stretches the fields with it. Worse, a wrapping
+         * {@link JTextArea} reports its current width back as its preferred width, so once stretched
+         * the form can only grow — a window that was maximised once keeps a horizontal scrollbar.
+         */
         void addNote(String text) {
             var constraints = new GridBagConstraints();
             constraints.gridx = COL_LABEL;
             constraints.gridy = row++;
             constraints.gridwidth = 2;
-            constraints.weightx = 1;
             constraints.fill = GridBagConstraints.HORIZONTAL;
             constraints.insets = new Insets(0, 0, 12, 0);
             add(descriptionText(text), constraints);
