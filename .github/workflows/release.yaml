@@ -10,6 +10,10 @@ jobs:
   build:
     name: Build and release binaries
     runs-on: ubuntu-latest
+    # Creating the release and uploading the jars needs write access to contents. The default
+    # GITHUB_TOKEN is read-only, which fails every upload with an HTTP error.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - name: Execute CGO builds using XGO
