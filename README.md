@@ -70,7 +70,15 @@ Configuration settings and other necessary information like the destination serv
 local server per request by a magic header.
 This magic header is stripped from the request before it's forwarded to the destination server.
 
-![diagram](./docs/basic_diagram.png)
+```mermaid
+flowchart LR
+    burp["Burp<br/>Proxy · Repeater<br/>Intruder · Scanner"]
+    spoof["Spoof TLS proxy<br/>local Go server<br/>127.0.0.1:8887"]
+    dest["Destination"]
+
+    burp <-->|"applies configuration through<br/>a custom HTTP header"| spoof
+    spoof <-->|"sets TLS fingerprint, HTTP header<br/>order and HTTP/2 fingerprint"| dest
+```
 
 > :information_source: Another option would've been to code an upstream proxy server and connect burp to it, but I
 > personally needed an extension for customization and portability.
@@ -114,6 +122,8 @@ the 'Defaults' tab.
 When several rules could match, the most specific one wins: an exact host beats a wildcard, and a longer wildcard
 suffix beats a shorter one. Row order does not matter.
 
+![screenshot](./docs/domain_rules.png)
+
 Rules save themselves as you edit — there's no need to press 'Save settings' for them. They are stored as plain JSON
 outside the Burp project, so they survive project switches and can be edited by hand, kept in version control, or
 shared with a team:
@@ -155,9 +165,21 @@ from the request:
 
 ![screenshot](./docs/advanced_settings.png)
 
-When enabled, the diagram changes to this:
+When enabled, the flow changes to this:
 
-![diagram](./docs/advanced_diagram.png)
+```mermaid
+flowchart LR
+    client["Your browser<br/>or app"]
+    intercept["Intercept TLS proxy<br/>127.0.0.1:8886"]
+    burp["Burp"]
+    spoof["Spoof TLS proxy<br/>local Go server"]
+    dest["Destination"]
+
+    client -->|"real ClientHello"| intercept
+    intercept <-->|"captured TLS fingerprint"| burp
+    burp <-->|"applies configuration through<br/>a custom HTTP header"| spoof
+    spoof <-->|"replays the captured fingerprint"| dest
+```
 
 > :warning: This takes priority over everything else. Once enabled and a fingerprint has been captured, it overrides the
 > fingerprint of **every** domain rule. If your rules appear to have no effect, check that this switch is off first.

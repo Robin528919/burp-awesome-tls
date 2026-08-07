@@ -62,7 +62,15 @@ Burp 的 API 对这类高级用法支持相当有限，因此实现上做了一�
 配置项以及目标服务器地址、协议等必要信息，是通过一个特殊的 magic header **逐请求**传给本地服务器的。该 header
 在转发到真实目标之前会被剥离。
 
-![流程图](./docs/basic_diagram.png)
+```mermaid
+flowchart LR
+    burp["Burp<br/>Proxy · Repeater<br/>Intruder · Scanner"]
+    spoof["伪造 TLS 代理<br/>本地 Go 服务器<br/>127.0.0.1:8887"]
+    dest["目标服务器"]
+
+    burp <-->|"通过自定义 HTTP header<br/>传递配置"| spoof
+    spoof <-->|"设置 TLS 指纹、HTTP header<br/>顺序与 HTTP/2 指纹"| dest
+```
 
 > :information_source: 另一种思路是实现一个上游代理服务器再让 Burp 连过去，但原作者出于自定义能力和便携性的考虑选择了扩展的形式。
 
@@ -99,6 +107,8 @@ Burp 的 API 对这类高级用法支持相当有限，因此实现上做了一�
 
 当多条规则都能匹配时，最具体的那条生效：精确主机名优先于通配符，更长的通配符后缀优先于更短的。**行的先后顺序不影响结果。**
 
+![截图](./docs/domain_rules.png)
+
 规则会在编辑后自动保存 —— 无需为它们点击 'Save settings'。规则以纯 JSON 形式保存在 Burp
 工程之外，因此切换工程后依然存在，并且可以手工编辑、纳入版本管理或与团队共享：
 
@@ -133,7 +143,19 @@ Burp 的 API 对这类高级用法支持相当有限，因此实现上做了一�
 
 启用后，流程变为：
 
-![流程图](./docs/advanced_diagram.png)
+```mermaid
+flowchart LR
+    client["你的浏览器<br/>或应用"]
+    intercept["Intercept TLS 代理<br/>127.0.0.1:8886"]
+    burp["Burp"]
+    spoof["伪造 TLS 代理<br/>本地 Go 服务器"]
+    dest["目标服务器"]
+
+    client -->|"真实 ClientHello"| intercept
+    intercept <-->|"抓取到的 TLS 指纹"| burp
+    burp <-->|"通过自定义 HTTP header<br/>传递配置"| spoof
+    spoof <-->|"重放抓取到的指纹"| dest
+```
 
 > :warning: 该功能优先级最高。一旦启用并成功抓取到指纹，它会覆盖**所有**域名规则中的指纹设置。如果发现规则没有生效，请先确认此开关处于关闭状态。
 
