@@ -50,3 +50,6 @@ jobs:
         with:
           file: "./build/libs/*.jar"
           tags: true
+          # This action creates a draft by default, which leaves the release invisible and
+          # detached from its tag until someone publishes it by hand.
+          draft: false
