@@ -1,6 +1,6 @@
 # Awesome TLS — Burp Suite TLS Fingerprint Spoofing Extension
 
-**English** | [简体中文](./README.zh-CN.md)
+**Repository:** [Robin528919/burp-awesome-tls-plus](https://github.com/Robin528919/burp-awesome-tls-plus) · **English** | [简体中文](./README.zh-CN.md)
 
 [![Release](https://img.shields.io/github/v/release/Robin528919/burp-awesome-tls-plus?display_name=tag&sort=semver)](https://github.com/Robin528919/burp-awesome-tls-plus/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
@@ -8,19 +8,29 @@
 [![Burp](https://img.shields.io/badge/Burp%20Suite-Pro%20%26%20Community-orange)](https://portswigger.net/burp)
 [![llms.txt](https://img.shields.io/badge/llms.txt-available-green)](./llms.txt)
 
+> **Last updated:** 2026-08-07 · **Latest release:** [v2.3.1](https://github.com/Robin528919/burp-awesome-tls-plus/releases/tag/v2.3.1)  
 > **This is a fork of [sleeyax/burp-awesome-tls](https://github.com/sleeyax/burp-awesome-tls).**
 > The original extension — its design, its Go/JNA architecture and essentially all of the code this
 > builds on — is the work of [@sleeyax](https://github.com/sleeyax) and its contributors.
-> This fork continues development on top of it; see [what this fork adds](#what-this-fork-adds).
+> This fork (`burp-awesome-tls-plus`) continues development on top of it; see [what this fork adds](#what-this-fork-adds)
+> and the [comparison with upstream](./docs/comparison.md).
 > Distributed under GPL v3, the same license as upstream.
 
 ## What is Awesome TLS?
 
-**Awesome TLS** is a [Burp Suite](https://portswigger.net/burp) extension that **spoofs browser TLS fingerprints** (JA3 / JA4 / ClientHello) so outbound traffic from Burp no longer looks like Java’s default TLS stack.
+**Awesome TLS** (this project: **burp-awesome-tls-plus**) is a [Burp Suite](https://portswigger.net/burp) extension that spoofs browser TLS fingerprints (JA3 / JA4 / ClientHello). Outbound Burp traffic uses a browser-like ClientHello instead of Java’s default TLS stack, which many WAFs score as automated traffic.
 
-It is used by security researchers and pentesters to reduce WAF and bot-detection blocks (Cloudflare, PerimeterX, Akamai, DataDome, and similar) while testing with **Proxy, Repeater, Intruder, and Scanner**.
+Security researchers and pentesters load it when Cloudflare, PerimeterX, Akamai, DataDome, or similar bot systems block Burp. Spoofing applies to **four Burp tools**: Proxy, Repeater, Intruder, and Scanner. Implementation uses a local Go server over JNA with [utls](https://github.com/refraction-networking/utls) and [bogdanfinn/tls-client](https://github.com/bogdanfinn/tls-client) — no reflection and no forked Burp Community code.
 
-Unlike workarounds that patch Burp or fork Community builds, this extension routes requests through a local Go TLS stack ([utls](https://github.com/refraction-networking/utls) / [tls-client](https://github.com/bogdanfinn/tls-client)) via JNA — no reflection, no private Burp APIs.
+### At a glance
+
+| Metric | Value (this fork) |
+| --- | --- |
+| Named TLS profiles | **80** (`default` + 79 from [tls-client `MappedTLSClients`](https://github.com/bogdanfinn/tls-client)) |
+| Burp tools covered | **4** — Proxy, Repeater, Intruder, Scanner |
+| Prebuilt OS/arch targets | **8** — macOS ×2, Linux ×4, Windows ×2 (plus fat jar) |
+| Domain rules | Exact host + `*.suffix`; most-specific match wins |
+| Config store | Shareable `rules.json` outside the Burp project |
 
 | Need | What this extension does |
 | --- | --- |
@@ -29,17 +39,15 @@ Unlike workarounds that patch Burp or fork Community builds, this extension rout
 | Only Proxy should be spoofed | Covers **all Burp tools**: Proxy, Repeater, Intruder, Scanner |
 | Cloudflare bot score is low | Improves TLS/HTTP2 fingerprint alignment (see [showcase](#showcase)) |
 
-**Keywords:** Burp Suite extension, TLS fingerprint spoofing, JA3, JA4, ClientHello, Cloudflare bot detection, WAF bypass, utls, HTTP/2 fingerprint, per-domain fingerprint rules.
+![Awesome TLS Defaults tab in Burp Suite showing fingerprint and transport settings](./docs/settings.png)
 
-![screenshot](./docs/settings.png)
-
-**Quick links:** [Install](#installation) · [Configuration](#configuration) · [How it works](#how-it-works) · [FAQ](#faq) · [Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases) · [AI summary (`llms.txt`)](./llms.txt) · [中文文档](./README.zh-CN.md)
+**Quick links:** [Install](#installation) · [Configuration](#configuration) · [How it works](#how-it-works) · [FAQ](#faq) · [vs upstream](./docs/comparison.md) · [Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases) · [AI summary (`llms.txt`)](./llms.txt) · [中文文档](./README.zh-CN.md)
 
 ---
 
 ## What this fork adds
 
-| | Upstream | This fork |
+| | Upstream (`sleeyax/burp-awesome-tls`) | This fork (`burp-awesome-tls-plus`) |
 | --- | --- | --- |
 | Fingerprint scope | One global setting | Per-domain rules, with the global setting as the fallback |
 | Tools covered | Proxy only | Proxy, Repeater, Intruder, Scanner — every tool |
@@ -67,8 +75,8 @@ build, so it could only be regenerated from inside the IDE.
 
 [CloudFlare bot score](https://cloudflare.manfredi.io/en/tools/connection):
 
-![cloudflare bot score of Burp Pro](./docs/cloudflare_bot_score_burp_pro.png)
-![cloudflare bot score of Awesome TLS](./docs/cloudflare_bot_score_awesome_tls.png)
+![Cloudflare connection tool bot score while using stock Burp Pro TLS](./docs/cloudflare_bot_score_burp_pro.png)
+![Cloudflare connection tool bot score while using Awesome TLS (burp-awesome-tls-plus)](./docs/cloudflare_bot_score_awesome_tls.png)
 
 This is just one example. If you tested with another dedicated bot detection site, let me know your results!
 
@@ -115,7 +123,7 @@ Awesome TLS' tab for more information about each field.
 
 To load your custom Client Hello from WireShark, you can copy the client hello record as hex stream and paste it
 into the field "Hex Client Hello".
-![screenshot](./docs/wireshark_capture_client_hello.png)
+![Wireshark capture of a TLS ClientHello copied as hex stream for the Hex Client Hello field](./docs/wireshark_capture_client_hello.png)
 
 What the three tabs are for:
 
@@ -135,7 +143,7 @@ the 'Defaults' tab.
 When several rules could match, the most specific one wins: an exact host beats a wildcard, and a longer wildcard
 suffix beats a shorter one. Row order does not matter.
 
-![screenshot](./docs/domain_rules.png)
+![Domain rules table with per-host fingerprint overrides in burp-awesome-tls-plus](./docs/domain_rules.png)
 
 Rules save themselves as you edit — there's no need to press 'Save settings' for them. They are stored as plain JSON
 outside the Burp project, so they survive project switches and can be edited by hand, kept in version control, or
@@ -176,7 +184,7 @@ either inherited from Defaults or not used at all.
 In the 'advanced' tab, you can enable an additional proxy listener that will automatically apply the current fingerprint
 from the request:
 
-![screenshot](./docs/advanced_settings.png)
+![Advanced tab intercept proxy settings for capturing a real ClientHello fingerprint](./docs/advanced_settings.png)
 
 When enabled, the flow changes to this:
 
@@ -218,15 +226,23 @@ You should now have one jar file (usually located at `./build/libs`) that works 
 
 ### What is a Burp Suite TLS fingerprint spoofing extension?
 
-It is software loaded into Burp Suite that changes the TLS ClientHello (and related HTTP/2 signals) of outgoing requests so remote servers see a browser-like fingerprint instead of Burp’s default Java TLS fingerprint.
+It is a Burp Java extension that rewrites the TLS ClientHello (and related HTTP/2 signals) of outgoing requests so remote servers see a browser-like fingerprint instead of Burp’s default Java TLS fingerprint.
 
-### How does Awesome TLS differ from the upstream `sleeyax/burp-awesome-tls`?
+### What is burp-awesome-tls-plus?
 
-This fork keeps the same Go + JNA architecture and adds **per-domain fingerprint rules**, coverage of **all Burp tools** (not only Proxy), **auto-saving rules** in a shareable `rules.json`, and UI/theme fixes. See [what this fork adds](#what-this-fork-adds).
+**burp-awesome-tls-plus** is this repository: a maintained fork of [sleeyax/burp-awesome-tls](https://github.com/sleeyax/burp-awesome-tls) that adds per-domain rules and full-tool coverage. Download jars from [its releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases).
+
+### How does burp-awesome-tls-plus differ from upstream `sleeyax/burp-awesome-tls`?
+
+Same Go + JNA architecture. This fork adds **per-domain fingerprint rules**, spoofing for **all four tools** (not Proxy-only), auto-saving shareable `rules.json`, and UI/theme fixes. Full matrix: [docs/comparison.md](./docs/comparison.md).
 
 ### Does Awesome TLS work with Burp Community Edition?
 
 Yes. Load the Java extension jar in Extender / Extensions the same way as on Burp Professional.
+
+### How many TLS fingerprint profiles are included?
+
+**80** entries in the fingerprint list: the built-in `default` profile plus **79** named clients from tls-client’s `MappedTLSClients` (Chrome, Firefox, Safari, iOS, Android, OkHttp, and others). You can also paste a custom ClientHello hex stream.
 
 ### Can I set different JA3 / TLS fingerprints per host?
 
@@ -234,11 +250,11 @@ Yes. Use the **Domain rules** tab: exact hosts (`example.com`) or wildcards (`*.
 
 ### Does it help against Cloudflare, Akamai, DataDome, or PerimeterX?
 
-It improves the **TLS / HTTP fingerprint** layer those systems use. It is not a guarantee of full bot-score success — application behavior, cookies, JS challenges, and IP reputation still matter. See the [Cloudflare bot score showcase](#showcase).
+It improves the **TLS / HTTP fingerprint** layer those systems use. It does not guarantee a perfect bot score — cookies, JS challenges, and IP reputation still matter. See the [Cloudflare bot score showcase](#showcase).
 
 ### Which Burp tools get the spoofed fingerprint?
 
-Proxy, Repeater, Intruder, and Scanner. Burp suite-internal traffic (updates, Collaborator polling) is left alone.
+Exactly four: Proxy, Repeater, Intruder, and Scanner. Burp suite-internal traffic (updates, Collaborator polling) is left alone.
 
 ### How do I verify the fingerprint after enabling the extension?
 
@@ -295,7 +311,7 @@ full in the commit history.
 
 ## Repository
 
-- **GitHub:** https://github.com/Robin528919/burp-awesome-tls-plus
+- **This project (burp-awesome-tls-plus):** https://github.com/Robin528919/burp-awesome-tls-plus
 - **Releases / downloads:** https://github.com/Robin528919/burp-awesome-tls-plus/releases
 - **Upstream:** https://github.com/sleeyax/burp-awesome-tls
-- **Topics:** `burp-suite`, `tls-fingerprint`, `ja3`, `ja4`, `waf-bypass`, `clienthello`, `utls`
+- **Comparison:** [docs/comparison.md](./docs/comparison.md)
