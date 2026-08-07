@@ -169,6 +169,17 @@ marks a request as already handled; drop that guard and every request rewrites i
 Burp's own traffic (`ToolType.SUITE` — update checks, Collaborator polling) is passed through
 too, since redirecting it through the spoof server would break it.
 
+**The READMEs and `docs/**.md` are also a published website.** GitHub Pages builds
+<https://robin528919.github.io/burp-awesome-tls-plus/> from `main`'s root via Jekyll, so
+`README.md` *is* the site index and every other markdown file becomes a page in `sitemap.xml`.
+Editing docs silently redeploys the site. Two root files drive it: `_config.yml` (theme,
+plugins, `exclude` list for build artefacts) and `_includes/head-custom.html` — the cayman
+layout already emits `{% seo %}`, so that include holds only the JSON-LD and the `llms.txt`
+pointer, and adding a second seo tag there would duplicate every meta tag. Relative `.md`
+links are rewritten to `.html` by `jekyll-relative-links`; don't hand-write `.html` targets.
+The site exists because the GitHub repo page cannot be verified in Search Console and this can
+— see `docs/posts/` for the same reason.
+
 **The UI is hand-written Swing — do not reintroduce a `.form` file.** The IntelliJ GUI
 designer form was removed (along with the `com.intellij:forms_rt` dependency) because it was
 never wired into Gradle: there was no `javac2` instrumentation, so `SettingsTab.form` could
