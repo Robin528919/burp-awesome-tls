@@ -6,6 +6,7 @@
 
 - Product name: Awesome TLS
 - **GitHub repository (this project):** https://github.com/Robin528919/burp-awesome-tls-plus
+- **Documentation site:** https://robin528919.github.io/burp-awesome-tls-plus/
 - Upstream (original): https://github.com/sleeyax/burp-awesome-tls
 - Latest release (as of 2026-08-07): v2.3.1 — https://github.com/Robin528919/burp-awesome-tls-plus/releases
 - License: GPL-3.0

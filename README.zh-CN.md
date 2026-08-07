@@ -1,6 +1,6 @@
 # Awesome TLS — Burp Suite TLS 指纹伪造扩展
 
-**仓库：** [Robin528919/burp-awesome-tls-plus](https://github.com/Robin528919/burp-awesome-tls-plus) · [English](./README.md) | **简体中文**
+**仓库：** [Robin528919/burp-awesome-tls-plus](https://github.com/Robin528919/burp-awesome-tls-plus) · **文档站：** [robin528919.github.io/burp-awesome-tls-plus](https://robin528919.github.io/burp-awesome-tls-plus/) · [English](./README.md) | **简体中文**
 
 [![Release](https://img.shields.io/github/v/release/Robin528919/burp-awesome-tls-plus?display_name=tag&sort=semver)](https://github.com/Robin528919/burp-awesome-tls-plus/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)

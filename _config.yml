@@ -3,7 +3,9 @@
 # The point of this site is to be an indexable, submittable surface — the GitHub
 # repo page itself cannot be verified in Google Search Console, this can.
 
-title: Awesome TLS — burp-awesome-tls-plus
+# Kept short on purpose: jekyll-seo-tag appends it to every page title as
+# "<page title> | <site title>", and Google truncates around 60 characters.
+title: burp-awesome-tls-plus
 description: >-
   Burp Suite extension that spoofs browser TLS fingerprints (JA3 / JA4 / ClientHello)
   with per-domain rules. Covers Proxy, Repeater, Intruder, Scanner and other extensions.
