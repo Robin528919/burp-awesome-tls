@@ -20,14 +20,14 @@
 
 **Awesome TLS** (this project: **burp-awesome-tls-plus**) is a [Burp Suite](https://portswigger.net/burp) extension that spoofs browser TLS fingerprints (JA3 / JA4 / ClientHello). Outbound Burp traffic uses a browser-like ClientHello instead of Java’s default TLS stack, which many WAFs score as automated traffic.
 
-Security researchers and pentesters load it when Cloudflare, PerimeterX, Akamai, DataDome, or similar bot systems block Burp. Spoofing applies to **four Burp tools**: Proxy, Repeater, Intruder, and Scanner. Implementation uses a local Go server over JNA with [utls](https://github.com/refraction-networking/utls) and [bogdanfinn/tls-client](https://github.com/bogdanfinn/tls-client) — no reflection and no forked Burp Community code.
+Security researchers and pentesters load it when Cloudflare, PerimeterX, Akamai, DataDome, or similar bot systems block Burp. Spoofing applies to **every Burp tool** — Proxy, Repeater, Intruder, Scanner, and requests other extensions send — with Burp's own suite traffic deliberately left alone. Implementation uses a local Go server over JNA with [utls](https://github.com/refraction-networking/utls) and [bogdanfinn/tls-client](https://github.com/bogdanfinn/tls-client) — no reflection and no forked Burp Community code.
 
 ### At a glance
 
 | Metric | Value (this fork) |
 | --- | --- |
 | Named TLS profiles | **80** (`default` + 79 from [tls-client `MappedTLSClients`](https://github.com/bogdanfinn/tls-client)) |
-| Burp tools covered | **4** — Proxy, Repeater, Intruder, Scanner |
+| Burp tools covered | **All of them** — Proxy, Repeater, Intruder, Scanner, other extensions; only Burp's own suite traffic is skipped |
 | Prebuilt OS/arch targets | **8** — macOS ×2, Linux ×4, Windows ×2 (plus fat jar) |
 | Domain rules | Exact host + `*.suffix`; most-specific match wins |
 | Config store | Shareable `rules.json` outside the Burp project |
@@ -36,7 +36,7 @@ Security researchers and pentesters load it when Cloudflare, PerimeterX, Akamai,
 | --- | --- |
 | Burp looks like Java TLS / bot traffic | Spoofs Chrome, Firefox, Safari, mobile, or custom ClientHello fingerprints |
 | One global fingerprint is not enough | **Per-domain rules** (exact host or `*.suffix`) with global defaults as fallback |
-| Only Proxy should be spoofed | Covers **all Burp tools**: Proxy, Repeater, Intruder, Scanner |
+| Only Proxy should be spoofed | Covers **all Burp tools**: Proxy, Repeater, Intruder, Scanner, and other extensions |
 | Cloudflare bot score is low | Improves TLS/HTTP2 fingerprint alignment (see [showcase](#showcase)) |
 
 ![Awesome TLS Defaults tab in Burp Suite showing fingerprint and transport settings](./docs/settings.png)
@@ -50,7 +50,7 @@ Security researchers and pentesters load it when Cloudflare, PerimeterX, Akamai,
 | | Upstream (`sleeyax/burp-awesome-tls`) | This fork (`burp-awesome-tls-plus`) |
 | --- | --- | --- |
 | Fingerprint scope | One global setting | Per-domain rules, with the global setting as the fallback |
-| Tools covered | Proxy only | Proxy, Repeater, Intruder, Scanner — every tool |
+| Tools covered | Proxy only | Every tool — Proxy, Repeater, Intruder, Scanner, and other extensions |
 | Rule storage | — | A JSON file outside the Burp project: hand-editable, diffable, shareable |
 | Saving | Manual, per tab | Rules save themselves; import/export to move them between machines |
 
@@ -87,7 +87,8 @@ to make this work.
 
 Once a request comes in, the extension intercepts it and forwards it to a local HTTPS server that started in the
 background (once the extension loaded). This applies to traffic from every Burp tool — Proxy, Repeater, Intruder and
-Scanner all get the spoofed fingerprint. Burp's own internal traffic is left alone.
+Scanner all get the spoofed fingerprint, as do requests other extensions send. Burp's own internal traffic is left
+alone.
 This server works like a proxy; it forwards the request to the destination, while persisting the original header order
 and applying a customizable TLS configuration.
 Then, the local server forwards the response back to Burp.
@@ -111,7 +112,7 @@ flowchart LR
 
 ## Installation
 
-1. Download the jar for your OS from **[this fork’s releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases)** (latest: v2.3.x). A fat jar is also published for all supported platforms (portable / USB-friendly).
+1. Download the jar for your OS from **[this fork’s releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases)** (latest: v2.3.1). A fat jar covering every supported platform is published alongside them (portable / USB-friendly).
    Upstream builds: [sleeyax/burp-awesome-tls/releases](https://github.com/sleeyax/burp-awesome-tls/releases).
 2. In Burp (Pro or Community): **Extensions → Installed → Add** → extension type **Java** → select the jar → **Next**. It should load without errors.
 3. Open the **Awesome TLS** suite tab, pick a fingerprint (or domain rules), and send traffic from Proxy / Repeater / Intruder / Scanner.
@@ -151,9 +152,13 @@ shared with a team:
 
 | OS | Location |
 | --- | --- |
-| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
-| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json` (or `~/.config/...`) |
-| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+| macOS | `~/Library/Application Support/burp-awesome-tls-plus/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls-plus/rules.json` (or `~/.config/...`) |
+| Windows | `%AppData%\burp-awesome-tls-plus\rules.json` |
+
+> :information_source: Builds before the `-plus` rename used a `burp-awesome-tls` directory. Both the
+> rules file and the CA certificate are moved across on first start, so an upgrade keeps your rules
+> and does not ask clients to trust a newly generated CA.
 
 The previous version is always kept alongside it as `rules.json.bak`. Use 'Export…' and 'Import…' to move rules
 between machines; importing asks whether to merge with or replace your current rules.
@@ -207,18 +212,27 @@ flowchart LR
 
 </details>
 
-## Manual build Instructions
+## Manual build instructions
 
 No particular IDE is required — the settings UI is hand-written Swing, so a JDK and a Go toolchain
 are enough. See [workflows](.github/workflows) for the target language versions.
 
 1. Compile the go package within `./src-go/`. Run
-   `cd ./src-go/server && go build -o ../../src/main/resources/{OS}-{ARCH}/server.{EXT} -buildmode=c-shared ./cmd/main.go`,
-   replacing `{OS}-{ARCH}` with your OS and CPU architecture and `{EXT}` with your platform's preferred extension for
-   dynamic C libraries. For example: `linux-x86-64/server.so`. See
-   the [JNA docs](https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md) for more info about
-   supported platforms.
-2. Build the jar with Gradle: `gradle buildJar`.
+   `cd ./src-go/server && go build -o ../../src/main/resources/{OS}-{ARCH}/{PREFIX}server.{EXT} -buildmode=c-shared ./cmd/main.go`,
+   filling in the row for your platform:
+
+   | Platform | `{OS}-{ARCH}` | Output file |
+   | --- | --- | --- |
+   | macOS x64 / arm64 | `darwin-x86-64` / `darwin-aarch64` | `libserver.dylib` |
+   | Linux x86 / x64 / arm / arm64 | `linux-x86` / `linux-x86-64` / `linux-arm` / `linux-aarch64` | `server.so` |
+   | Windows x86 / x64 | `win32-x86` / `win32-x86-64` | `server.dll` |
+
+   > :warning: **macOS is the only platform that takes the `lib` prefix.** JNA looks for
+   > `libserver.dylib` there, so a file named `server.dylib` loads the extension into Burp and then
+   > fails with `UnsatisfiedLinkError`. The directory names are JNA's, not `uname`'s — see
+   > the [JNA docs](https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md).
+
+2. Build the jar with the Gradle wrapper: `./gradlew buildJar`.
 
 You should now have one jar file (usually located at `./build/libs`) that works with Burp on your operating system.
 
@@ -254,7 +268,7 @@ It improves the **TLS / HTTP fingerprint** layer those systems use. It does not 
 
 ### Which Burp tools get the spoofed fingerprint?
 
-Exactly four: Proxy, Repeater, Intruder, and Scanner. Burp suite-internal traffic (updates, Collaborator polling) is left alone.
+All of them. The extension registers an `HttpHandler`, which sees every outgoing request: Proxy, Repeater, Intruder, Scanner, and whatever other extensions send. The one exception is Burp's own suite traffic (update checks, Collaborator polling), which is left alone so it still reaches its real destination.
 
 ### How do I verify the fingerprint after enabling the extension?
 
@@ -266,9 +280,9 @@ Outside the Burp project, as JSON:
 
 | OS | Path |
 | --- | --- |
-| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
-| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json` (or `~/.config/...`) |
-| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+| macOS | `~/Library/Application Support/burp-awesome-tls-plus/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls-plus/rules.json` (or `~/.config/...`) |
+| Windows | `%AppData%\burp-awesome-tls-plus\rules.json` |
 
 ### Is this for authorized security testing only?
 

@@ -8,6 +8,12 @@ A Burp Suite extension ("Awesome TLS") that hijacks Burp's HTTP/TLS stack so out
 requests carry a spoofed browser TLS fingerprint (JA3) instead of Burp's Java stack
 fingerprint. It is a fork of `sleeyax/burp-awesome-tls`.
 
+The repository is **`Robin528919/burp-awesome-tls-plus`**. Four related names differ on purpose,
+so do not substitute one for another: the repo (`burp-awesome-tls-plus`), the product shown in
+Burp (*Awesome TLS*), the upstream project (`sleeyax/burp-awesome-tls`, no `-plus`), and the
+release assets (`Burp-Awesome-TLS-Plus-<platform>.jar`, renamed from the Gradle output by
+`build.sh`).
+
 Two languages, one artifact: a **Java** Burp extension that talks over **JNA** to a
 **Go** shared library doing the actual TLS work.
 
@@ -21,7 +27,7 @@ clone cannot produce a working jar from Gradle alone.
 cd src-go/server
 go build -o ../../src/main/resources/{OS}-{ARCH}/{PREFIX}server.{EXT} -buildmode=c-shared ./cmd/main.go
 
-# 2. Build the jar (output: ./build/libs/burp-awesome-tls.jar)
+# 2. Build the jar (output: ./build/libs/burp-awesome-tls-plus.jar — rootProject.name in settings.gradle)
 ./gradlew buildJar
 ```
 
@@ -117,7 +123,16 @@ temp-file + rename, previous version kept as `.bak` (saving is automatic, so the
 and unparseable content preserved as `.corrupt` rather than overwritten.
 
 `RuleStore.configDir()` reimplements Go's `os.UserConfigDir()` — Java has no equivalent — so
-both languages resolve to the same directory. Keep them in sync if either side changes.
+both languages resolve to the same directory. Keep them in sync if either side changes: the
+directory name lives in `RuleStore.DIR_NAME` and `certificate.go`'s `configDirName`, and the two
+must match or the CA and the rules end up in different places.
+
+Both sides also migrate off the pre-`-plus` directory name (`RuleStore.LEGACY_DIR_NAME` /
+`legacyConfigDirName`), each moving only its own files: Java takes `rules.json` and its `.bak`,
+Go takes `ca.der` and `caKey.der`. The condition is the *file*, not the directory — whichever
+side starts first creates the new directory, so a directory-level check would strand the other
+side's data in the old location. Both are no-ops once the file is in place, so they are safe to
+re-run and cannot overwrite newer state.
 
 Setups predating the file still have rules in `Preferences`; `Settings.loadRulesAtStartup()`
 migrates them once and deliberately leaves the old key in place so a downgrade still works.
@@ -131,7 +146,7 @@ migrates them once and deliberately leaves the old key in place so a downgrade s
 - `src-go/server/` — `server.go` (the local HTTPS server + handler), `transport.go`
   (`TransportConfig` + tls-client construction), `hexclienthello.go` (parses a raw
   ClientHello hex stream into a utls spec), `certificate.go` (self-signed CA, cached under
-  the OS config dir as `burp-awesome-tls/ca.der`), `intercept.go` (the optional
+  the OS config dir as `burp-awesome-tls-plus/ca.der`), `intercept.go` (the optional
   fingerprint-sniffing proxy), `cmd/main.go` (cgo exports).
 
 Go module is named `server` (not a domain path); `cmd/main.go` imports it as `"server"`.

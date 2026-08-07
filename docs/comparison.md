@@ -6,7 +6,7 @@
 
 ## One-sentence difference
 
-**burp-awesome-tls-plus** keeps upstream’s Go + JNA TLS spoof architecture and adds **per-domain fingerprint rules**, spoofing for **Proxy + Repeater + Intruder + Scanner**, and **auto-saved shareable `rules.json`**.
+**burp-awesome-tls-plus** keeps upstream’s Go + JNA TLS spoof architecture and adds **per-domain fingerprint rules**, spoofing for **every Burp tool** rather than Proxy alone, and **auto-saved shareable `rules.json`**.
 
 ## Feature matrix
 
@@ -17,9 +17,9 @@
 | Custom hex ClientHello | Yes | Yes |
 | Per-domain fingerprint rules | No (global only) | Yes — exact host and `*.suffix` |
 | Rule match specificity | N/A | Exact > longer wildcard > shorter; row order irrelevant |
-| Burp tools rewritten | Proxy-focused historically | **4 tools:** Proxy, Repeater, Intruder, Scanner |
-| Settings persistence | Manual save; split-tab pitfalls fixed upstream issues noted in README | Rules auto-save; import/export |
-| Rule file location | — | OS config dir `burp-awesome-tls/rules.json` (product path name; repo is still **plus**) |
+| Burp tools rewritten | Proxy-focused historically | **Every tool:** Proxy, Repeater, Intruder, Scanner and other extensions; only Burp's own suite traffic is skipped |
+| Settings persistence | Manual save, one tab at a time — saving from one tab silently discarded edits made in the other | Rules auto-save; import/export; the split-tab bug is fixed |
+| Rule file location | — | OS config dir `burp-awesome-tls-plus/rules.json`, migrated from a pre-rename `burp-awesome-tls/` on first start |
 | UI | IntelliJ form heritage / upstream UI | Hand-written Swing + Burp `applyThemeToComponent` |
 | License | GPL-3.0 | GPL-3.0 (inherited) |
 | Prebuilt jars | Upstream releases | [plus releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases) — **8** OS/arch + fat jar |

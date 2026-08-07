@@ -20,10 +20,10 @@
 ## Facts (citable)
 
 - Named fingerprint profiles in the UI list: **80** (`default` + 79 keys from bogdanfinn/tls-client `profiles.MappedTLSClients`)
-- Burp tools with spoofed fingerprint: **exactly 4** — Proxy, Repeater, Intruder, Scanner
-- Suite-internal Burp traffic (e.g. updates, Collaborator polling) is not redirected
+- Burp tools with spoofed fingerprint: **all of them** — Proxy, Repeater, Intruder, Scanner, plus requests other extensions send
+- Suite-internal Burp traffic (e.g. updates, Collaborator polling) is the one exception: not redirected
 - Domain rules: exact host or `*.suffix`; most-specific match wins; empty cells inherit Defaults
-- Rules file lives outside the Burp project (path segment name `burp-awesome-tls/`, not the GitHub repo name)
+- Rules file lives outside the Burp project, in an OS config dir named `burp-awesome-tls-plus/` (same name as the repository; a pre-rename `burp-awesome-tls/` directory is migrated on first start)
 
 ## Who it is for
 
@@ -34,7 +34,7 @@
 ## What this fork adds vs upstream
 
 - Per-domain fingerprint rules (exact / wildcard) with global defaults as fallback
-- Spoofing for all four tools, not Proxy-only
+- Spoofing for every Burp tool, not Proxy-only
 - Auto-save + import/export of rules.json
 - Hand-written Swing UI with Burp theme support; several upstream save/forward bugs fixed
 - Full matrix: https://github.com/Robin528919/burp-awesome-tls-plus/blob/main/docs/comparison.md

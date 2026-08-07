@@ -19,7 +19,7 @@ Many WAFs and bot managers fingerprint TLS and HTTP/2. Burp’s Java stack often
 
 ### Is this the same as sleeyax/burp-awesome-tls?
 
-No. It is a **fork**. Core design comes from upstream. **burp-awesome-tls-plus** adds per-domain rules, full Burp-tool coverage (four tools), JSON rule storage, and UI/bug fixes. See [comparison.md](./comparison.md). Credit and star the upstream project: https://github.com/sleeyax/burp-awesome-tls
+No. It is a **fork**. Core design comes from upstream. **burp-awesome-tls-plus** adds per-domain rules, coverage of every Burp tool rather than Proxy alone, JSON rule storage, and UI/bug fixes. See [comparison.md](./comparison.md). Credit and star the upstream project: https://github.com/sleeyax/burp-awesome-tls
 
 ---
 
@@ -35,7 +35,7 @@ Yes. Install as a Java extension (Extensions → Add → Java → select jar).
 
 ### Which Burp tools use the spoofed fingerprint?
 
-Exactly **four**: Proxy, Repeater, Intruder, and Scanner. Burp suite-internal traffic is not redirected.
+**All of them.** The extension registers an `HttpHandler`, which sees every outgoing request: Proxy, Repeater, Intruder, Scanner, and requests other extensions send. Burp's own suite-internal traffic (update checks, Collaborator polling) is the single exception and is not redirected.
 
 ---
 
@@ -58,15 +58,17 @@ If both are set for the same scope, **hex takes precedence**. Overriding only fi
 
 ### Where are rules stored?
 
-Outside the Burp project file (directory name `burp-awesome-tls` is the product config folder, not the GitHub repo name):
+Outside the Burp project file, in an OS config directory named after the repository:
 
 | OS | Path |
 | --- | --- |
-| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
-| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json` or `~/.config/burp-awesome-tls/rules.json` |
-| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+| macOS | `~/Library/Application Support/burp-awesome-tls-plus/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls-plus/rules.json` or `~/.config/burp-awesome-tls-plus/rules.json` |
+| Windows | `%AppData%\burp-awesome-tls-plus\rules.json` |
 
 Previous version: `rules.json.bak`. Import/export is available in the UI.
+
+Builds before the `-plus` rename used `burp-awesome-tls/`. On first start the rules file and the CA certificate are moved into the new directory, so upgrading keeps existing rules and does not force clients to trust a regenerated CA.
 
 ### What does the Advanced intercept mode do?
 
@@ -103,7 +105,7 @@ Send a request from Burp (with the extension enabled) and compare JA3/JA4 / HTTP
 
 ### How do I build from source?
 
-1. Build the Go c-shared library into `src/main/resources/{OS}-{ARCH}/` (see README / `build.sh`).  
+1. Build the Go c-shared library into `src/main/resources/{OS}-{ARCH}/` (see README / `build.sh`). On macOS the file must be named `libserver.dylib` — the `lib` prefix is required there and on no other platform.  
 2. `./gradlew buildJar` → jar under `build/libs/`.
 
 ---

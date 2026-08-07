@@ -20,14 +20,14 @@
 
 **Awesome TLS**（本仓库名：**burp-awesome-tls-plus**）是一款 [Burp Suite](https://portswigger.net/burp) 扩展，用于伪造浏览器 TLS 指纹（JA3 / JA4 / ClientHello）。Burp 外发流量使用接近真实浏览器的 ClientHello，而不再暴露 Java 默认 TLS 栈特征。
 
-安全研究人员与渗透测试人员在 Cloudflare、PerimeterX、Akamai、DataDome 等 WAF / 机器人检测拦截 Burp 时使用它。伪造范围覆盖 **4 个工具**：Proxy、Repeater、Intruder、Scanner。实现上经 JNA 将请求路由到本地 Go TLS 栈（[utls](https://github.com/refraction-networking/utls) / [tls-client](https://github.com/bogdanfinn/tls-client)），不使用反射，也不 fork Burp Community 源码。
+安全研究人员与渗透测试人员在 Cloudflare、PerimeterX、Akamai、DataDome 等 WAF / 机器人检测拦截 Burp 时使用它。伪造范围覆盖 **所有 Burp 工具** —— Proxy、Repeater、Intruder、Scanner，以及其他扩展发出的请求；只有 Burp 自身的内部流量被有意跳过。实现上经 JNA 将请求路由到本地 Go TLS 栈（[utls](https://github.com/refraction-networking/utls) / [tls-client](https://github.com/bogdanfinn/tls-client)），不使用反射，也不 fork Burp Community 源码。
 
 ### 一览
 
 | 指标 | 数值（本 fork） |
 | --- | --- |
 | 命名 TLS 指纹配置 | **80**（`default` + [tls-client `MappedTLSClients`](https://github.com/bogdanfinn/tls-client) 中的 79 项） |
-| 覆盖的 Burp 工具 | **4** — Proxy、Repeater、Intruder、Scanner |
+| 覆盖的 Burp 工具 | **全部** — Proxy、Repeater、Intruder、Scanner 以及其他扩展；只跳过 Burp 自身的内部流量 |
 | 预构建 OS/架构 | **8** — macOS ×2、Linux ×4、Windows ×2（另有 fat jar） |
 | 域名规则 | 精确主机 + `*.后缀`；最具体规则优先 |
 | 配置存储 | Burp 工程外的可共享 `rules.json` |
@@ -36,7 +36,7 @@
 | --- | --- |
 | Burp 被识别为 Java TLS / 机器人流量 | 伪造 Chrome、Firefox、Safari、移动端或自定义 ClientHello |
 | 全局一个指纹不够用 | **按域名规则**（精确主机或 `*.后缀`），全局配置作兜底 |
-| 只想改 Proxy | 覆盖 **全部工具**：Proxy、Repeater、Intruder、Scanner |
+| 只想改 Proxy | 覆盖 **全部工具**：Proxy、Repeater、Intruder、Scanner 以及其他扩展 |
 | Cloudflare bot score 偏低 | 改善 TLS/HTTP2 指纹对齐（见[效果展示](#效果展示)） |
 
 ![Burp Suite 中 Awesome TLS 的 Defaults 标签页，含指纹与传输设置](./docs/settings.png)
@@ -50,7 +50,7 @@
 | | 上游（`sleeyax/burp-awesome-tls`） | 本 fork（`burp-awesome-tls-plus`） |
 | --- | --- | --- |
 | 指纹作用范围 | 只有一个全局设置 | 按域名配置规则，全局设置作为兜底 |
-| 覆盖的工具 | 仅 Proxy | Proxy、Repeater、Intruder、Scanner —— 全部工具 |
+| 覆盖的工具 | 仅 Proxy | 全部工具 —— Proxy、Repeater、Intruder、Scanner 以及其他扩展 |
 | 规则存储 | — | 存为 Burp 工程之外的 JSON 文件：可手工编辑、可 diff、可共享 |
 | 保存方式 | 手动，且分标签页 | 规则自动保存；支持导入导出，方便在多台机器间迁移 |
 
@@ -81,7 +81,7 @@
 Burp 的 API 对这类高级用法支持相当有限，因此实现上做了一些取巧。
 
 当一个请求进来时，扩展会拦截它，并转发给扩展加载时在后台启动的本地 HTTPS
-服务器。所有 Burp 工具的流量都会走这条路径 —— Proxy、Repeater、Intruder、Scanner 都能拿到伪造的指纹，Burp
+服务器。所有 Burp 工具的流量都会走这条路径 —— Proxy、Repeater、Intruder、Scanner 都能拿到伪造的指纹，其他扩展发出的请求同样如此；Burp
 自身的内部流量则不受影响。
 
 这个本地服务器的作用类似代理：它把请求转发到真实目标，同时保留原始的请求头顺序，并应用可自定义的 TLS 配置。随后再把响应回传给 Burp。
@@ -103,7 +103,7 @@ flowchart LR
 
 ## 安装
 
-1. 从 **[本 fork 的 Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases)** 下载对应操作系统的 jar（当前为 v2.3.x）。也可下载 fat jar，适用于全部支持平台，便于 U 盘跨平台使用。
+1. 从 **[本 fork 的 Releases](https://github.com/Robin528919/burp-awesome-tls-plus/releases)** 下载对应操作系统的 jar（当前为 v2.3.1）。也可下载 fat jar，适用于全部支持平台，便于 U 盘跨平台使用。
    上游构建产物：[sleeyax/burp-awesome-tls/releases](https://github.com/sleeyax/burp-awesome-tls/releases)。
 2. 打开 Burp（Pro 或 Community）→ **Extensions → Installed → Add** → 类型选 **Java** → 选择 jar → **Next**，应能无报错加载。
 3. 打开 **Awesome TLS** 标签页，选择指纹（或配置域名规则），即可让 Proxy / Repeater / Intruder / Scanner 的流量带上伪造指纹。
@@ -139,9 +139,11 @@ flowchart LR
 
 | 操作系统 | 路径 |
 | --- | --- |
-| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
-| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json`（或 `~/.config/...`） |
-| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+| macOS | `~/Library/Application Support/burp-awesome-tls-plus/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls-plus/rules.json`（或 `~/.config/...`） |
+| Windows | `%AppData%\burp-awesome-tls-plus\rules.json` |
+
+> :information_source: `-plus` 改名之前的版本用的目录是 `burp-awesome-tls`。首次启动时规则文件与 CA 证书都会自动搬到新目录，因此升级不会丢失规则，也不需要让客户端重新信任新生成的 CA。
 
 上一个版本始终会保留为同目录下的 `rules.json.bak`。使用 'Export…' 和 'Import…' 可以在机器之间迁移规则；导入时会询问是与现有规则合并还是整体替换。
 
@@ -191,10 +193,20 @@ flowchart LR
 不需要特定的 IDE —— 设置界面是手写 Swing，只需要 JDK 和 Go 工具链。目标语言版本参见 [workflows](.github/workflows)。
 
 1. 编译 `./src-go/` 下的 go 包。执行
-   `cd ./src-go/server && go build -o ../../src/main/resources/{OS}-{ARCH}/server.{EXT} -buildmode=c-shared ./cmd/main.go`，
-   把 `{OS}-{ARCH}` 替换为你的操作系统和 CPU 架构，把 `{EXT}` 替换为对应平台的动态库扩展名。例如：`linux-x86-64/server.so`。
-   支持的平台参见 [JNA 文档](https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md)。
-2. 用 Gradle 构建 jar：`gradle buildJar`。
+   `cd ./src-go/server && go build -o ../../src/main/resources/{OS}-{ARCH}/{PREFIX}server.{EXT} -buildmode=c-shared ./cmd/main.go`，
+   按下表填写你所在平台对应的那一行：
+
+   | 平台 | `{OS}-{ARCH}` | 输出文件名 |
+   | --- | --- | --- |
+   | macOS x64 / arm64 | `darwin-x86-64` / `darwin-aarch64` | `libserver.dylib` |
+   | Linux x86 / x64 / arm / arm64 | `linux-x86` / `linux-x86-64` / `linux-arm` / `linux-aarch64` | `server.so` |
+   | Windows x86 / x64 | `win32-x86` / `win32-x86-64` | `server.dll` |
+
+   > :warning: **只有 macOS 需要 `lib` 前缀。** JNA 在 macOS 上查找的是 `libserver.dylib`，若文件名为
+   > `server.dylib`，扩展能载入 Burp 但随即抛出 `UnsatisfiedLinkError`。目录名用的是 JNA 的命名而非
+   > `uname` 的输出，详见 [JNA 文档](https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md)。
+
+2. 用 Gradle wrapper 构建 jar：`./gradlew buildJar`。
 
 完成后你会得到一个可在当前操作系统上配合 Burp 使用的 jar 文件（通常位于 `./build/libs`）。
 
@@ -230,7 +242,7 @@ flowchart LR
 
 ### 哪些 Burp 工具会走伪造指纹？
 
-正好四个：Proxy、Repeater、Intruder、Scanner。Burp 自身内部流量（更新检查、Collaborator 轮询等）不会被改写。
+全部。扩展注册的是 `HttpHandler`，它能看到每一个外发请求：Proxy、Repeater、Intruder、Scanner，以及其他扩展发出的请求。唯一的例外是 Burp 自身的内部流量（更新检查、Collaborator 轮询等），这部分被有意放行，否则会被打断。
 
 ### 启用后如何验证指纹？
 
@@ -242,9 +254,9 @@ flowchart LR
 
 | 操作系统 | 路径 |
 | --- | --- |
-| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
-| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json`（或 `~/.config/...`） |
-| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+| macOS | `~/Library/Application Support/burp-awesome-tls-plus/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls-plus/rules.json`（或 `~/.config/...`） |
+| Windows | `%AppData%\burp-awesome-tls-plus\rules.json` |
 
 ### 是否仅限授权安全测试？
 
