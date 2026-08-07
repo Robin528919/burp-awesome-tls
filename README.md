@@ -34,7 +34,8 @@ Unfortunately Burp's API is very limited for more advanced use cases like this, 
 to make this work.
 
 Once a request comes in, the extension intercepts it and forwards it to a local HTTPS server that started in the
-background (once the extension loaded).
+background (once the extension loaded). This applies to traffic from every Burp tool — Proxy, Repeater, Intruder and
+Scanner all get the spoofed fingerprint. Burp's own internal traffic is left alone.
 This server works like a proxy; it forwards the request to the destination, while persisting the original header order
 and applying a customizable TLS configuration.
 Then, the local server forwards the response back to Burp.
@@ -68,6 +69,35 @@ To load your custom Client Hello from WireShark, you can copy the client hello r
 into the field "Hex Client Hello".
 ![screenshot](./docs/wireshark_capture_client_hello.png)
 
+### Per-domain fingerprints
+
+The 'Domain rules' tab lets you use a different fingerprint per target instead of one global setting.
+Each rule matches either an exact host (`example.com`) or its subdomains (`*.example.com`), and can override the
+fingerprint, hex ClientHello, external proxy and timeout independently. Any cell left empty inherits the value from
+the 'Defaults' tab.
+
+When several rules could match, the most specific one wins: an exact host beats a wildcard, and a longer wildcard
+suffix beats a shorter one. Row order does not matter.
+
+Rules save themselves as you edit — there's no need to press 'Save settings' for them. They are stored as plain JSON
+outside the Burp project, so they survive project switches and can be edited by hand, kept in version control, or
+shared with a team:
+
+| OS | Location |
+| --- | --- |
+| macOS | `~/Library/Application Support/burp-awesome-tls/rules.json` |
+| Linux | `$XDG_CONFIG_HOME/burp-awesome-tls/rules.json` (or `~/.config/...`) |
+| Windows | `%AppData%\burp-awesome-tls\rules.json` |
+
+The previous version is always kept alongside it as `rules.json.bak`. Use 'Export…' and 'Import…' to move rules
+between machines; importing asks whether to merge with or replace your current rules.
+
+> :information_source: A rule with an incomplete host pattern is highlighted and simply ignored at request time,
+> so you can leave one half-finished without breaking anything.
+
+> :information_source: The settings on the 'Advanced' tab stay global. The local server runs a single shared intercept
+> proxy, so those values cannot vary per domain.
+
 <details>
   <summary>Advanced usage</summary>
 
@@ -94,8 +124,7 @@ See [workflows](.github/workflows) for the target programming language versions.
    dynamic C libraries. For example: `linux-x86-64/server.so`. See
    the [JNA docs](https://github.com/java-native-access/jna/blob/master/www/GettingStarted.md) for more info about
    supported platforms.
-2. Compile the GUI form `SettingsTab.form` into Java code via `Build > Build project`.
-3. Build the jar with Gradle: `gradle buildJar`.
+2. Build the jar with Gradle: `gradle buildJar`.
 
 You should now have one jar file (usually located at `./build/libs`) that works with Burp on your operating system.
 

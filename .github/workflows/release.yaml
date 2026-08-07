@@ -17,7 +17,9 @@ jobs:
         # docs: https://github.com/marketplace/actions/golang-cgo-cross-compiler#inputs
         with:
           xgo_version: latest
-          go_version: 1.24.1
+          # Must satisfy the toolchain directive in src-go/server/go.mod, and match the version
+          # build.yaml compiles with. An older Go here makes the build fetch a toolchain mid-run.
+          go_version: '1.26'
           dest: build
           pkg: cmd
           prefix: server

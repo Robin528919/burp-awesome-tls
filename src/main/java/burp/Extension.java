@@ -2,11 +2,14 @@ package burp;
 
 import burp.api.montoya.BurpExtension;
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.ToolType;
 import burp.api.montoya.http.HttpService;
-import burp.api.montoya.proxy.http.InterceptedRequest;
-import burp.api.montoya.proxy.http.ProxyRequestHandler;
-import burp.api.montoya.proxy.http.ProxyRequestReceivedAction;
-import burp.api.montoya.proxy.http.ProxyRequestToBeSentAction;
+import burp.api.montoya.http.handler.HttpHandler;
+import burp.api.montoya.http.handler.HttpRequestToBeSent;
+import burp.api.montoya.http.handler.HttpResponseReceived;
+import burp.api.montoya.http.handler.RequestToBeSentAction;
+import burp.api.montoya.http.handler.ResponseReceivedAction;
+import burp.api.montoya.http.message.requests.HttpRequest;
 import com.google.gson.Gson;
 
 import java.net.URI;
@@ -18,6 +21,7 @@ public class Extension implements BurpExtension {
     private MontoyaApi api;
     private Gson gson;
     private Settings settings;
+    private SettingsTab settingsTab;
 
     private static final String HEADER_KEY = "Awesometlsconfig";
 
@@ -26,6 +30,7 @@ public class Extension implements BurpExtension {
         this.api = api;
         this.gson = new Gson();
         this.settings = new Settings(api);
+        this.settingsTab = new SettingsTab(settings);
 
         api.extension().setName("Awesome TLS");
         api.extension().registerUnloadingHandler(() -> {
@@ -34,33 +39,62 @@ public class Extension implements BurpExtension {
                 api.logging().logToError(err);
             }
         });
-        api.userInterface().registerSuiteTab("Awesome TLS", new SettingsTab(settings).getUI());
-        api.proxy().registerRequestHandler(new ProxyRequestHandler() {
+        var ui = settingsTab.getUI();
+        // Burp's own styling pass: font size, colors and table line spacing, matched to the
+        // active theme. Cheaper and more correct than deriving all of that from UIManager.
+        api.userInterface().applyThemeToComponent(ui);
+        api.userInterface().registerSuiteTab("Awesome TLS", ui);
+        // An HTTP handler sees traffic from every tool, so Repeater, Intruder and Scanner get the
+        // spoofed fingerprint too. A Proxy handler would only cover browser traffic.
+        api.http().registerHttpHandler(new HttpHandler() {
             @Override
-            public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest interceptedRequest) {
-                return processHttpRequest(interceptedRequest);
+            public RequestToBeSentAction handleHttpRequestToBeSent(HttpRequestToBeSent requestToBeSent) {
+                return RequestToBeSentAction.continueWith(processHttpRequest(requestToBeSent));
             }
 
             @Override
-            public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest interceptedRequest) {
-                return ProxyRequestReceivedAction.continueWith(interceptedRequest);
+            public ResponseReceivedAction handleHttpResponseReceived(HttpResponseReceived responseReceived) {
+                return ResponseReceivedAction.continueWith(responseReceived);
             }
         });
 
+        var listenAddress = settings.getSpoofProxyAddress();
         new Thread(() -> {
-            var err = ServerLibrary.INSTANCE.StartServer(settings.getSpoofProxyAddress());
+            // StartServer blocks for the lifetime of the server. A failure to bind returns within
+            // milliseconds, so this optimistic status is corrected below before anyone can read it.
+            settingsTab.setServerStatus("Running — listening on " + listenAddress, false);
+
+            var err = ServerLibrary.INSTANCE.StartServer(listenAddress);
+
+            // Reaching here means the server stopped, or never managed to start.
             if (!err.isEmpty()) {
                 api.logging().logToError(err);
+                settingsTab.setServerStatus("Stopped — " + err, true);
+
                 var isGraceful = err.contains("Server stopped") || err.contains("address already in use");
                 if (!isGraceful) {
                     api.extension().unload(); // fatal error; disable the extension
                 }
+            } else {
+                settingsTab.setServerStatus("Stopped", true);
             }
         }).start();
     }
 
-    private ProxyRequestToBeSentAction processHttpRequest(InterceptedRequest request) {
+    private HttpRequest processHttpRequest(HttpRequestToBeSent request) {
         try {
+            // The rewritten request below is itself sent by Burp, so it comes back through this
+            // handler. Without this guard it would be rewritten again, endlessly.
+            if (request.hasHeader(HEADER_KEY)) {
+                return request;
+            }
+
+            // Burp's own traffic (update checks, Collaborator polling, the BApp store) must reach
+            // its real destination; redirecting it through the spoof server would break it.
+            if (request.toolSource().isFromTool(ToolType.SUITE)) {
+                return request;
+            }
+
             var requestURL = new URI(request.url()).toURL();
 
             if (requestURL.getHost().equals("awesome-tls-error")) {
@@ -72,7 +106,7 @@ public class Extension implements BurpExtension {
                 headerOrder[i] = request.headers().get(i).name();
             }
 
-            var transportConfig = settings.toTransportConfig();
+            var transportConfig = settings.toTransportConfig(requestURL.getHost());
             transportConfig.Host = requestURL.getHost();
             transportConfig.Scheme = requestURL.getProtocol();
             transportConfig.HeaderOrder = headerOrder;
@@ -80,12 +114,13 @@ public class Extension implements BurpExtension {
             var goConfigJSON = gson.toJson(transportConfig);
             var url = new URI("https://" + settings.getSpoofProxyAddress()).toURL();
             var httpService = HttpService.httpService(url.getHost(), url.getPort(), Objects.equals(url.getProtocol(), "https"));
-            var nextRequest = request.withService(httpService).withAddedHeader(HEADER_KEY, goConfigJSON);
 
-            return ProxyRequestToBeSentAction.continueWith(nextRequest);
+            return request.withService(httpService).withAddedHeader(HEADER_KEY, goConfigJSON);
         } catch (Exception e) {
+            // Send the request unmodified rather than dropping it: losing traffic outright is a
+            // worse failure than losing the spoofed fingerprint for one request.
             api.logging().logToError("Http request error: " + e);
-            return null;
+            return request;
         }
     }
 }
