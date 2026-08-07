@@ -1,8 +1,90 @@
-.idea
-/.gradle/
-/build/
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*~
+
+# --- IDE / editors ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Java / Gradle ---
+.gradle/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+bin/
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+
+# --- Go ---
+# cgo c-shared outputs land under src/main/resources/{OS-ARCH}/
 *.h
 *.so
 *.dll
 *.dylib
-.DS_Store
+# xgo / local Go build artifacts (see build.sh)
+src-go/server/build/
+**/vendor/
+*.test
+*.out
+coverage.out
+coverage.html
+go.work
+go.work.sum
+
+# --- Secrets / local env ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+credentials.json
+secrets/
+
+# --- Logs & temp ---
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# --- Agent / AI tooling (local only; do not ship with the extension) ---
+# Project skills install via `npx skills` — restore with skills-lock if needed
+.agents/
+.claude/settings.json
+.claude/settings.local.json
+.claude/worktrees/
+.claude/skills/
+.claude/commands/
+.grok/
+.cursor/
+skills-lock.json
+.codegraph/
+
+# Optional: keep project memory/plans if you add them later
+# !.claude/memory/
+# !.claude/plans/
